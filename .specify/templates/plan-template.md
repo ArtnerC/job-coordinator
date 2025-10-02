@@ -47,7 +47,53 @@
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+### I. Demo Often
+
+- [ ] Feature reaches demonstrable state within one development cycle
+- [ ] Demo environment mirrors production (GCP resources, FHIR data, CQL execution)
+- [ ] Stakeholder feedback loop ≤ 2 weeks
+- [ ] All outputs are visible and testable with realistic scenarios
+
+### II. Test Always (NON-NEGOTIABLE)
+
+- [ ] Unit tests cover: business logic, CQL parsing, FHIR processing, measure calculations
+- [ ] Integration tests cover: service contracts, GCP interactions, end-to-end pipelines
+- [ ] Test data includes representative FHIR bundles and CQL measures
+- [ ] CI enforces: all tests pass, 80%+ coverage on core logic, no skipped tests
+- [ ] TDD approach: tests written BEFORE implementation
+
+### III. Reuse - Don't Reinvent
+
+- [ ] Evaluated existing libraries/tools before custom implementation
+- [ ] Using established CQL engines (e.g., cql-engine, fhir-cql) if applicable
+- [ ] Using FHIR libraries (HAPI FHIR, Google FHIR SDK) for FHIR handling
+- [ ] Preferring GCP-native services over custom orchestration
+- [ ] Build vs. buy decision documented in ADRs if custom code required
+
+### IV. Reduce Iteration Time
+
+- [ ] Local dev supports: hot-reload, mocked GCP services, sample FHIR/CQL data
+- [ ] Build times optimized: layer caching, incremental builds, parallel tests
+- [ ] Deployment pipeline completes in <15 minutes for dev/staging
+- [ ] Code review starts within 4 hours, approvals within 24 hours
+- [ ] Infrastructure changes have plan previews before apply
+
+### V. User/Dev Experience is Key
+
+**End Users**:
+
+- [ ] Measure results are clear, actionable, and auditable
+- [ ] Error messages are human-readable with corrective actions
+- [ ] APIs have consistent, documented interfaces (OpenAPI specs)
+- [ ] Performance target: measure execution <30s for typical populations
+
+**Developers**:
+
+- [ ] Onboarding documented: setup scripts, README, sample data
+- [ ] Local dev setup completes in <30 minutes
+- [ ] Error messages include context: request IDs, traces, resource identifiers
+- [ ] Documentation co-located: inline comments, architecture diagrams
+- [ ] Deployment processes are scripted (no manual console clicks)
 
 ## Project Structure
 
