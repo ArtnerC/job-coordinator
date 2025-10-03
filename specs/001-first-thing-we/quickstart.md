@@ -243,6 +243,143 @@ EOF
 
 ---
 
+### Scenario 6: Measures Folder Path Mode
+
+**Use Case**: Apply all measures from a folder without listing them individually
+
+**Run**:
+```bash
+./bin/coordinator \
+  --batch-size=500 \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures/2023/q4 \
+  --use-measures-folder-path=true \
+  --distributor=stdout
+```
+
+**Result**: Each work unit includes `measures_folder_path` field instead of `measures` array:
+
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "work_unit_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "file_path": "patients/2023/jan/bundle-001.ndjson",
+  "start_line": 0,
+  "end_line": 499,
+  "total_lines": 500,
+  "measures_folder_path": "measures/2023/q4",
+  "base_path": "/data/bundles",
+  "created_at": "2025-10-03T10:00:00.000Z"
+}
+```
+
+**Benefits**:
+- Dynamic measure sets (add/remove measures without redeploying)
+- Smaller work unit payloads
+- Executor discovers measures at runtime
+
+---
+
+### Scenario 7: Whole File Mode (Batch Size Zero)
+
+**Use Case**: Process entire files without splitting (optimized for small files or testing)
+
+**Run**:
+```bash
+./bin/coordinator \
+  --batch-size=0 \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
+  --distributor=stdout
+```
+
+**Performance Benefits**:
+- Skips file line counting (faster startup)
+- One work unit per file
+- Simpler executor logic
+
+**Work Unit Example**:
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "work_unit_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "file_path": "patients/2023/jan/bundle-001.ndjson",
+  "start_line": 0,
+  "end_line": 2147483647,
+  "total_lines": 2147483647,
+  "measures": ["measures/cms-125-v10.json"],
+  "base_path": "/data/bundles",
+  "created_at": "2025-10-03T10:00:00.000Z"
+}
+```
+
+**Note**: `end_line` and `total_lines` set to sentinel value (`math.MaxInt32`). Executor reads entire file.
+
+---
+
+### Scenario 8: Runtime Configuration Updates
+
+**Use Case**: Adjust configuration dynamically before or during job execution
+
+**Start with Auto-Start Disabled**:
+```bash
+./bin/coordinator \
+  --auto-start=false \
+  --batch-size=500 \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
+  --distributor=stdout \
+  --api-port=8080 &
+
+COORDINATOR_PID=$!
+```
+
+**Inspect Configuration**:
+```bash
+curl http://localhost:8080/config | jq .
+```
+
+**Update Batch Size (Before Starting)**:
+```bash
+# Switch to whole-file mode
+curl -X PUT http://localhost:8080/config \
+  -H "Content-Type: application/json" \
+  -d '{"batch_size": 0}'
+
+# Verify update
+curl http://localhost:8080/config | jq .batch_size
+```
+
+**Update TTL (During Execution)**:
+```bash
+# Start job
+curl -X POST http://localhost:8080/job/start
+
+# Extend retention period
+curl -X PUT http://localhost:8080/config \
+  -H "Content-Type: application/json" \
+  -d '{"completion_ttl": "20m"}'
+```
+
+**Invalid Update (Should Fail)**:
+```bash
+# Try to change batch_size while running (not allowed)
+curl -X PUT http://localhost:8080/config \
+  -H "Content-Type: application/json" \
+  -d '{"batch_size": 1000}'
+
+# Expected: 400 Bad Request
+# {"error": "Cannot modify batch_size while job is running"}
+```
+
+**Cleanup**:
+```bash
+curl -X PUT http://localhost:8080/job/cancel
+wait $COORDINATOR_PID
+```
+
+---
+
 ## Testing the Build
 
 ### Unit Tests

@@ -355,6 +355,110 @@ patients/2023/feb/bundle-003.ndjson
 
 ---
 
+---
+
+### 13. Measures Folder Path Support
+
+**Decision**: Support both explicit measure lists and folder path references in work units
+
+**Rationale**:
+- **Use Case 1**: Specific measures known upfront → use `measures` array
+- **Use Case 2**: All measures in folder should be applied → use `measures_folder_path`
+- Simplifies configuration when measure set is dynamic or large
+- Executor performs measure discovery at runtime from folder
+- Reduces work unit size when many measures exist
+
+**Validation**: Exactly one of `measures` or `measures_folder_path` must be provided (mutually exclusive)
+
+**Executor Contract**:
+- If `measures_folder_path` provided:
+  - Construct full path: `{base_path}/{measures_folder_path}`
+  - Discover all measure files (e.g., `*.json`, `*.cql`)
+  - Sort measures by name for consistent execution order
+  - Load and apply each measure
+
+**Configuration Flag**: `--use-measures-folder-path` boolean flag to enable folder mode globally
+
+**Implementation**: 
+- Add `measures_folder_path` field to WorkUnit schema
+- Update JSON schema with `oneOf` constraint
+- Add `UseMeasuresFolderPath` to JobConfig
+
+---
+
+### 14. Batch Size Zero Mode (Whole File Processing)
+
+**Decision**: Support `batch_size=0` to process entire NDJSON files as single work units
+
+**Rationale**:
+- **Performance Optimization**: Skip line counting for large files
+- **Simplicity**: When file size is manageable, avoid splitting overhead
+- **Use Cases**: 
+  - Small files (< 1000 patients)
+  - Testing scenarios
+  - Files pre-split at optimal size
+  - Scenarios where executor can handle full file efficiently
+
+**Implementation Details**:
+- When `batch_size=0` or `nil`:
+  - Skip file line counting entirely
+  - Create one work unit per file
+  - Set `start_line=0`
+  - Set `end_line` to sentinel value (e.g., `math.MaxInt32` or `-1`)
+  - Set `total_lines` to sentinel value to indicate "whole file"
+- Executor recognizes sentinel values and reads entire file without line range constraints
+
+**Validation**:
+- `batch_size >= 0` (0 is valid)
+- When `batch_size=0`, `remainder_threshold` is ignored
+
+**Configuration**: `--batch-size=0` flag or env var `BATCH_SIZE=0`
+
+**Documentation**: Clearly document sentinel value conventions in work unit schema
+
+---
+
+### 15. Runtime Configuration Endpoint
+
+**Decision**: Add `/config` REST endpoints for configuration inspection and modification
+
+**Rationale**:
+- **Flexibility**: Adjust configuration before job starts without restart
+- **Observability**: Inspect current configuration for debugging
+- **Use Cases**:
+  - Test different batch sizes without redeploying
+  - Switch distributor configuration dynamically
+  - Extend TTL for long-running monitoring
+  - Toggle between measures array and folder path mode
+
+**Endpoints**:
+- `GET /config`: Return current configuration
+- `PUT /config`: Update configuration with validation
+
+**Configuration Modification Rules**:
+- **Runtime-Modifiable** (any state):
+  - `completion_ttl`: Extend or shorten retention period
+  
+- **Pre-Start Only** (pending state):
+  - `batch_size`: Must be set before job starts
+  - `remainder_threshold`: Must be set before job starts
+  - `concurrent_file_processors`: Must be set before job starts
+  - `distributor_type`: Must be set before job starts
+  - `distributor_config`: Must be set before job starts
+  - `use_measures_folder_path`: Must be set before job starts
+
+**Validation**:
+- State-based validation: Check job status before allowing modification
+- Value validation: Ensure valid ranges (e.g., `batch_size >= 0`)
+- Return 400 Bad Request with descriptive errors
+
+**Implementation**:
+- Add config handlers to `internal/api/handlers.go`
+- Add config validation logic to `internal/config/config.go`
+- Add configuration mutation methods with state checks
+
+---
+
 ## Research Checklist
 
 - [x] Go configuration management strategy
@@ -369,6 +473,9 @@ patients/2023/feb/bundle-003.ndjson
 - [x] Manifest file format
 - [x] Measures configuration approach
 - [x] Work unit data schema
+- [x] Measures folder path support
+- [x] Batch size zero mode (whole file)
+- [x] Runtime configuration endpoint
 - [x] Technology stack finalized
 
-**Status**: All technical decisions made, ready for Phase 1 design
+**Status**: All technical decisions including clarifications made, ready for Phase 1 design

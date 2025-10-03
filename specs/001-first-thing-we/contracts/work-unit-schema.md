@@ -22,7 +22,6 @@ Work units are serialized as JSON and sent to the configured distribution destin
     "start_line",
     "end_line",
     "total_lines",
-    "measures",
     "base_path",
     "created_at"
   ],
@@ -59,10 +58,14 @@ Work units are serialized as JSON and sent to the configured distribution destin
     },
     "measures": {
       "type": "array",
-      "description": "List of measure file paths to apply",
+      "description": "List of measure file paths to apply (mutually exclusive with measures_folder_path)",
       "items": {
         "type": "string"
       }
+    },
+    "measures_folder_path": {
+      "type": "string",
+      "description": "Relative path to folder containing all measures to apply (mutually exclusive with measures)"
     },
     "base_path": {
       "type": "string",
@@ -74,11 +77,23 @@ Work units are serialized as JSON and sent to the configured distribution destin
       "format": "date-time",
       "description": "Work unit creation timestamp (ISO 8601)"
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": ["measures"],
+      "not": { "required": ["measures_folder_path"] }
+    },
+    {
+      "required": ["measures_folder_path"],
+      "not": { "required": ["measures"] }
+    }
+  ]
 }
 ```
 
-### Example Work Unit
+### Example Work Units
+
+**Example 1: Explicit Measure List**
 
 ```json
 {
@@ -96,6 +111,24 @@ Work units are serialized as JSON and sent to the configured distribution destin
   "created_at": "2025-10-03T10:00:00.000Z"
 }
 ```
+
+**Example 2: Measures Folder Path**
+
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "work_unit_id": "8d3f7890-8536-51ef-b55c-f18gd2g01bf8",
+  "file_path": "patients/2023/jan/bundle-002.ndjson",
+  "start_line": 0,
+  "end_line": 999,
+  "total_lines": 1000,
+  "measures_folder_path": "measures/2023/q4",
+  "base_path": "/data/bundles",
+  "created_at": "2025-10-03T10:00:01.000Z"
+}
+```
+
+**Validation Rule**: Exactly one of `measures` or `measures_folder_path` MUST be provided. If `measures_folder_path` is specified, the executor is responsible for discovering all measure files in that folder (relative to `base_path`).
 
 ---
 
@@ -202,10 +235,20 @@ Executors consuming work units MUST:
    - Parse each line as FHIR Bundle JSON
 
 2. **Load Measures**:
+   
+   **Option A: Explicit Measure List** (if `measures` field provided):
    - For each measure in `measures` array:
-     - Construct full path: `{base_path}/{measure_path}` (assuming measures relative to base_path)
+     - Construct full path: `{base_path}/{measure_path}`
      - Load measure definition
      - Parse as CQL measure
+   
+   **Option B: Measures Folder** (if `measures_folder_path` field provided):
+   - Construct folder path: `{base_path}/{measures_folder_path}`
+   - Discover all measure files in folder (e.g., `*.json`, `*.cql`)
+   - For each discovered measure file:
+     - Load measure definition
+     - Parse as CQL measure
+   - Sort measures by name for consistent execution order
 
 3. **Execute Measures**:
    - For each patient bundle:

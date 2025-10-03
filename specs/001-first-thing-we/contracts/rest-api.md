@@ -210,6 +210,105 @@ GET /health HTTP/1.1
 
 ---
 
+### GET /config
+
+Get the current job configuration.
+
+**Request**:
+```http
+GET /config HTTP/1.1
+```
+
+**Response** (200 OK):
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "auto_start": true,
+  "batch_size": 500,
+  "remainder_threshold": 0.2,
+  "base_path": "/data/bundles",
+  "measures_path": "/data/measures",
+  "use_measures_folder_path": false,
+  "distributor_type": "pubsub",
+  "distributor_config": {
+    "project_id": "my-gcp-project",
+    "topic_id": "work-queue"
+  },
+  "completion_ttl": "10m",
+  "concurrent_file_processors": 10
+}
+```
+
+**Use Cases**:
+- Inspect current configuration
+- Verify configuration before making changes
+- Audit configuration for debugging
+
+---
+
+### PUT /config
+
+Update job configuration. Only allowed when job is in `pending` state or for specific runtime-modifiable settings.
+
+**Request**:
+```http
+PUT /config HTTP/1.1
+Content-Type: application/json
+
+{
+  "batch_size": 1000,
+  "completion_ttl": "15m"
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "message": "Configuration updated successfully",
+  "updated_fields": ["batch_size", "completion_ttl"]
+}
+```
+
+**Response** (400 Bad Request) - Invalid state:
+```json
+{
+  "error": "Cannot modify batch_size while job is running. Only runtime-modifiable settings (completion_ttl) can be changed."
+}
+```
+
+**Response** (400 Bad Request) - Invalid value:
+```json
+{
+  "error": "batch_size must be >= 0"
+}
+```
+
+**Modifiable Settings by Job State**:
+
+| Setting | Pending | Running | Paused | Terminal States |
+|---------|---------|---------|---------|-----------------|
+| `batch_size` | ✅ | ❌ | ❌ | ❌ |
+| `remainder_threshold` | ✅ | ❌ | ❌ | ❌ |
+| `concurrent_file_processors` | ✅ | ❌ | ❌ | ❌ |
+| `completion_ttl` | ✅ | ✅ | ✅ | ✅ |
+| `distributor_type` | ✅ | ❌ | ❌ | ❌ |
+| `distributor_config` | ✅ | ❌ | ❌ | ❌ |
+| `use_measures_folder_path` | ✅ | ❌ | ❌ | ❌ |
+
+**Runtime-Modifiable Settings** (any state):
+- `completion_ttl`: Can be adjusted to extend or shorten retention period
+
+**Pre-Start Settings** (only in `pending` state):
+- All other settings require job to be in `pending` state
+
+**Use Cases**:
+- Adjust batch size before starting job based on file sizes
+- Switch between measures array and folder path mode
+- Change distributor configuration (e.g., different Pub/Sub topic)
+- Extend TTL for long-running status monitoring
+
+---
+
 ## State Transitions
 
 Valid state transitions triggered by API endpoints:
@@ -226,6 +325,10 @@ PUT /job/cancel:
   pending → cancelled
   running → cancelled
   paused → cancelled
+
+PUT /config:
+  Any state → (same state, config updated)
+  Note: Only certain config fields modifiable in non-pending states
 ```
 
 Invalid transitions return `400 Bad Request`.
@@ -274,6 +377,30 @@ Test scenarios to validate API compliance:
    - Verify `completion_percentage` increases
    - Verify `distributed_count` increases
    - On completion, verify `ttl_remaining` decreases
+
+7. **Configuration Inspection**:
+   - GET /config at any time
+   - Verify all config fields returned correctly
+
+8. **Pre-Start Configuration Update**:
+   - Start coordinator with `auto_start=false`
+   - GET /config to verify initial settings
+   - PUT /config with `{"batch_size": 0}` (whole-file mode)
+   - Verify 200 OK response
+   - GET /config to confirm batch_size=0
+   - POST /job/start
+   - Verify work units have sentinel values for line ranges
+
+9. **Runtime Configuration Update**:
+   - Start job (running state)
+   - PUT /config with `{"completion_ttl": "20m"}`
+   - Verify 200 OK response
+   - PUT /config with `{"batch_size": 1000}` (should fail)
+   - Verify 400 Bad Request response
+
+10. **Configuration Validation**:
+    - PUT /config with `{"batch_size": -1}`
+    - Verify 400 Bad Request with validation error
 
 ---
 

@@ -254,11 +254,16 @@ concerns: config, models, processing logic, distribution strategies, and API han
    - Contract test: PUT /job/pause [P]
    - Contract test: PUT /job/cancel [P]
    - Contract test: GET /job/status [P]
+   - Contract test: GET /config [P]
+   - Contract test: PUT /config [P]
    - API handlers → `internal/api/handlers.go`
+   - Config handlers → `internal/api/config_handlers.go` [P]
    - Router setup → `internal/api/router.go`
 
 4. **From Work Unit Schema** (`contracts/work-unit-schema.md`):
-   - Contract test: WorkUnit JSON schema validation [P]
+   - Contract test: WorkUnit JSON schema validation (measures array) [P]
+   - Contract test: WorkUnit JSON schema validation (measures_folder_path) [P]
+   - Contract test: Mutually exclusive measures validation [P]
    - Pub/Sub distributor → `internal/distributor/pubsub.go` [P]
    - Stdout distributor → `internal/distributor/stdout.go` [P]
    - File distributor → `internal/distributor/file.go` [P]
@@ -269,8 +274,20 @@ concerns: config, models, processing logic, distribution strategies, and API han
    - Integration test: File mode end-to-end
    - Integration test: Pub/Sub mode (with emulator)
    - Integration test: Manual job control via API
+   - Integration test: Measures folder path mode
+   - Integration test: Whole file mode (batch_size=0)
+   - Integration test: Runtime config updates
 
-6. **Core Coordinator Logic**:
+6. **From New Features** (Research #13-15):
+   - Batch size zero mode logic → `internal/processor/batch_splitter.go`
+   - Measures folder path support → `internal/models/workunit.go`
+   - Config mutation with state validation → `internal/config/mutation.go`
+   - Unit test: batch_size=0 creates one work unit per file [P]
+   - Unit test: batch_size=0 skips line counting [P]
+   - Unit test: measures/measures_folder_path mutual exclusion [P]
+   - Unit test: config state-based validation [P]
+
+7. **Core Coordinator Logic**:
    - Main coordinator → `internal/coordinator/coordinator.go`
    - Entry point → `cmd/coordinator/main.go`
    - Graceful shutdown logic
@@ -310,13 +327,14 @@ concerns: config, models, processing logic, distribution strategies, and API han
 - Documentation updates [P]
 - Quickstart validation
 
-**Estimated Output**: 35-40 numbered, ordered tasks in tasks.md
+**Estimated Output**: 40-45 numbered, ordered tasks in tasks.md
 
 **Key Parallel Opportunities**:
 - All model files (5 files)
 - All distributor implementations (3 files)
-- All REST API contract tests (4 endpoints)
-- Most unit tests
+- All REST API contract tests (6 endpoints including /config)
+- Work unit schema validation tests (measures array + folder path modes)
+- Most unit tests (batch splitting, line counting, config validation)
 
 **Critical Path**:
 - Models → Coordinator → API → Integration Tests
@@ -343,9 +361,9 @@ No constitutional violations identified. All design decisions align with DQME pr
 ## Progress Tracking
 
 **Phase Status**:
-- [x] Phase 0: Research complete - research.md created with 12 technical decisions
-- [x] Phase 1: Design complete - data-model.md, contracts/, quickstart.md created
-- [x] Phase 2: Task planning complete - Detailed task generation strategy documented
+- [x] Phase 0: Research complete - research.md created with 15 technical decisions (including clarifications)
+- [x] Phase 1: Design complete - data-model.md, contracts/, quickstart.md created and updated
+- [x] Phase 2: Task planning complete - Detailed task generation strategy documented with new features
 - [ ] Phase 3: Tasks generated (/tasks command)
 - [ ] Phase 4: Implementation complete
 - [ ] Phase 5: Validation passed

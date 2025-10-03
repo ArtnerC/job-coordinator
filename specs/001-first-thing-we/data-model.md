@@ -70,9 +70,10 @@ Represents a single discrete unit of work within a job.
 - `JobID` (string): Parent job identifier
 - `FilePath` (string): Relative path to NDJSON file
 - `StartLine` (int): Starting line index (0-based, inclusive)
-- `EndLine` (int): Ending line index (0-based, inclusive)
-- `TotalLines` (int): Number of lines in this unit (EndLine - StartLine + 1)
-- `Measures` ([]string): List of measure file paths to apply
+- `EndLine` (int): Ending line index (0-based, inclusive). Set to sentinel value (e.g., math.MaxInt32) in whole-file mode
+- `TotalLines` (int): Number of lines in this unit (EndLine - StartLine + 1). Set to sentinel value in whole-file mode
+- `Measures` ([]string): List of measure file paths to apply (mutually exclusive with MeasuresFolderPath)
+- `MeasuresFolderPath` (*string): Relative path to folder containing all measures (mutually exclusive with Measures)
 - `BasePath` (string): Base directory path for resolving relative paths
 - `CreatedAt` (time.Time): Work unit creation timestamp
 - `Status` (WorkUnitStatus): Current distribution status
@@ -95,8 +96,10 @@ const (
 - FilePath must be non-empty and relative (no leading `/`)
 - StartLine >= 0
 - EndLine >= StartLine
-- TotalLines must equal (EndLine - StartLine + 1)
-- Measures can be empty (if no measures configured)
+- TotalLines must equal (EndLine - StartLine + 1), except in whole-file mode where sentinel values are used
+- Exactly one of Measures or MeasuresFolderPath must be set (mutually exclusive)
+- If Measures provided, can be empty array (if no measures configured)
+- If MeasuresFolderPath provided, must be non-empty relative path
 - BasePath must be absolute path
 
 **JSON Schema** (for serialization to Pub/Sub/file/stdout):
@@ -134,20 +137,36 @@ Configuration snapshot for a job execution.
 **Fields**:
 - `JobID` (string): Job ID from env var or auto-generated
 - `AutoStart` (bool): Whether job starts automatically or waits for /job/start
-- `BatchSize` (int): Lines per work unit (default 500)
-- `RemainderThreshold` (float64): Threshold for appending remainder to last batch (default 0.2)
+- `BatchSize` (*int): Lines per work unit (default 500). If 0 or nil, entire file becomes one work unit
+- `RemainderThreshold` (float64): Threshold for appending remainder to last batch (default 0.2). Ignored when BatchSize=0
 - `BasePath` (string): Base directory containing patient bundle files
 - `ManifestPath` (*string): Optional path to file manifest (nil for auto-discovery)
-- `MeasuresPath` (string): Directory containing measure definitions
-- `MeasuresManifestPath` (*string): Optional path to measures manifest (nil for auto-discovery)
+- `MeasuresPath` (*string): Optional directory containing measure definitions (nil if using MeasuresManifestPath or measures_folder_path in work units)
+- `MeasuresManifestPath` (*string): Optional path to measures manifest (nil for auto-discovery or folder path mode)
+- `UseMeasuresFolderPath` (bool): If true, work units include measures_folder_path instead of measures array
 - `DistributorType` (string): Type of distributor (pubsub, stdout, file)
 - `DistributorConfig` (map[string]string): Distributor-specific configuration
 - `CompletionTTL` (time.Duration): Time to keep running after completion (default 10min)
 - `ConcurrentFileProcessors` (int): Max concurrent file processors (default 10)
 - `ScaleTestCount` (*int): Optional scale test target count (nil for normal operation)
 
+**Batch Size Modes**:
+
+1. **Standard Mode** (`BatchSize > 0`, default 500):
+   - Files are split into work units of `BatchSize` lines each
+   - File line counting is performed
+   - Remainder threshold logic applies for last batch
+
+2. **Whole File Mode** (`BatchSize = 0` or `nil`):
+   - Each file becomes exactly one work unit
+   - Line counting is skipped for performance
+   - `start_line = 0`, `end_line` set to large sentinel value (e.g., `math.MaxInt32`)
+   - `total_lines` set to sentinel value or unknown indicator
+   - Executor reads entire file without line range constraints
+
 **Validation Rules**:
-- BatchSize must be > 0
+- BatchSize must be >= 0 (0 means whole file mode)
+- If BatchSize = 0, RemainderThreshold is ignored
 - RemainderThreshold must be between 0.0 and 1.0
 - BasePath must be absolute and exist
 - MeasuresPath must be absolute and exist
