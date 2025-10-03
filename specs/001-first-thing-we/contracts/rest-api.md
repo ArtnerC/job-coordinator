@@ -228,7 +228,11 @@ GET /config HTTP/1.1
   "remainder_threshold": 0.2,
   "base_path": "/data/bundles",
   "measures_path": "/data/measures",
-  "use_measures_folder_path": false,
+  "measures_to_run": [
+    "/data/measures/cms-125-v10.json",
+    "/data/measures/cms-130-v10.json"
+  ],
+  "use_measures_path": false,
   "distributor_type": "pubsub",
   "distributor_config": {
     "project_id": "my-gcp-project",
@@ -287,19 +291,35 @@ Content-Type: application/json
 
 | Setting | Pending | Running | Paused | Terminal States |
 |---------|---------|---------|---------|-----------------|
-| `batch_size` | ✅ | ❌ | ❌ | ❌ |
-| `remainder_threshold` | ✅ | ❌ | ❌ | ❌ |
-| `concurrent_file_processors` | ✅ | ❌ | ❌ | ❌ |
+| `batch_size` | ✅ | ✅* | ✅* | ❌ |
+| `remainder_threshold` | ✅ | ✅* | ✅* | ❌ |
+| `concurrent_file_processors` | ✅ | ✅* | ✅* | ❌ |
 | `completion_ttl` | ✅ | ✅ | ✅ | ✅ |
 | `distributor_type` | ✅ | ❌ | ❌ | ❌ |
 | `distributor_config` | ✅ | ❌ | ❌ | ❌ |
-| `use_measures_folder_path` | ✅ | ❌ | ❌ | ❌ |
+| `use_measures_path` | ✅ | ❌ | ❌ | ❌ |
+| `measures_to_run` | ✅ | ❌ | ❌ | ❌ |
 
-**Runtime-Modifiable Settings** (any state):
+**\*Graceful Runtime Changes**: When `batch_size`, `remainder_threshold`, or `concurrent_file_processors` are changed during `running` or `paused` states:
+- Changes apply to new work units being generated
+- In-flight work units and already-distributed work units are unaffected
+- File processor pool gracefully adjusts to new `concurrent_file_processors` limit
+
+**Runtime-Modifiable Settings** (any non-terminal state):
 - `completion_ttl`: Can be adjusted to extend or shorten retention period
+- `batch_size`: Applied to remaining files not yet processed (graceful)
+- `remainder_threshold`: Applied to remaining files not yet processed (graceful)
+- `concurrent_file_processors`: Worker pool adjusts gracefully
 
-**Pre-Start Settings** (only in `pending` state):
-- All other settings require job to be in `pending` state
+**Pre-Start Only Settings** (only in `pending` state):
+- `distributor_type`: Cannot change distribution method after start
+- `distributor_config`: Cannot change distributor config after start
+- `use_measures_path`: Cannot toggle between measures array and path mode after start
+- `measures_to_run`: Must set measure list before starting job
+
+**Measures Configuration Validation**:
+- `use_measures_path` can be changed from `true` to `false` only if `measures_to_run` is provided
+- If `use_measures_path=false` and `measures_to_run` is empty, request returns 400 Bad Request
 
 **Use Cases**:
 - Adjust batch size before starting job based on file sizes

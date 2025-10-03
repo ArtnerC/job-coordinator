@@ -69,12 +69,12 @@ Represents a single discrete unit of work within a job.
 - `ID` (string): Unique work unit identifier (UUID)
 - `JobID` (string): Parent job identifier
 - `FilePath` (string): Relative path to NDJSON file
-- `StartLine` (int): Starting line index (0-based, inclusive)
-- `EndLine` (int): Ending line index (0-based, inclusive). Set to sentinel value (e.g., math.MaxInt32) in whole-file mode
-- `TotalLines` (int): Number of lines in this unit (EndLine - StartLine + 1). Set to sentinel value in whole-file mode
-- `Measures` ([]string): List of measure file paths to apply (mutually exclusive with MeasuresFolderPath)
-- `MeasuresFolderPath` (*string): Relative path to folder containing all measures (mutually exclusive with Measures)
-- `BasePath` (string): Base directory path for resolving relative paths
+- `StartLine` (*int): Starting line index (0-based, inclusive). Nil when batch_size=0
+- `EndLine` (*int): Ending line index (0-based, inclusive). Nil when batch_size=0
+- `TotalLines` (*int): Number of lines in this unit (EndLine - StartLine + 1). Nil when batch_size=0
+- `Measures` ([]string): List of absolute measure file paths to apply (mutually exclusive with MeasuresPath)
+- `MeasuresPath` (*string): Absolute path to folder containing all measures (mutually exclusive with Measures)
+- `BasePath` (string): Base directory path for resolving patient bundle file paths only
 - `CreatedAt` (time.Time): Work unit creation timestamp
 - `Status` (WorkUnitStatus): Current distribution status
 - `Error` (*string): Error message if distribution failed
@@ -94,13 +94,14 @@ const (
 **Validation Rules**:
 - ID and JobID must be non-empty
 - FilePath must be non-empty and relative (no leading `/`)
-- StartLine >= 0
-- EndLine >= StartLine
-- TotalLines must equal (EndLine - StartLine + 1), except in whole-file mode where sentinel values are used
-- Exactly one of Measures or MeasuresFolderPath must be set (mutually exclusive)
-- If Measures provided, can be empty array (if no measures configured)
-- If MeasuresFolderPath provided, must be non-empty relative path
-- BasePath must be absolute path
+- If StartLine provided: >= 0
+- If EndLine provided: >= StartLine
+- If TotalLines provided: must equal (EndLine - StartLine + 1)
+- All three line fields (StartLine, EndLine, TotalLines) must be either all present or all nil
+- Exactly one of Measures or MeasuresPath must be set (mutually exclusive)
+- If Measures provided, can be empty array; each path must be absolute
+- If MeasuresPath provided, must be non-empty absolute path
+- BasePath must be absolute path (used for patient bundles only)
 
 **JSON Schema** (for serialization to Pub/Sub/file/stdout):
 ```json
@@ -141,9 +142,10 @@ Configuration snapshot for a job execution.
 - `RemainderThreshold` (float64): Threshold for appending remainder to last batch (default 0.2). Ignored when BatchSize=0
 - `BasePath` (string): Base directory containing patient bundle files
 - `ManifestPath` (*string): Optional path to file manifest (nil for auto-discovery)
-- `MeasuresPath` (*string): Optional directory containing measure definitions (nil if using MeasuresManifestPath or measures_folder_path in work units)
-- `MeasuresManifestPath` (*string): Optional path to measures manifest (nil for auto-discovery or folder path mode)
-- `UseMeasuresFolderPath` (bool): If true, work units include measures_folder_path instead of measures array
+- `MeasuresPath` (*string): Optional absolute path to directory containing measure definitions (nil if using MeasuresManifestPath or UseMeasuresPath mode)
+- `MeasuresToRun` ([]string): Optional list of specific measure paths to include in work units (pending state only)
+- `MeasuresManifestPath` (*string): Optional path to measures manifest (nil for auto-discovery or path mode)
+- `UseMeasuresPath` (bool): If true, work units include measures_path field pointing to MeasuresPath instead of measures array
 - `DistributorType` (string): Type of distributor (pubsub, stdout, file)
 - `DistributorConfig` (map[string]string): Distributor-specific configuration
 - `CompletionTTL` (time.Duration): Time to keep running after completion (default 10min)
@@ -156,12 +158,12 @@ Configuration snapshot for a job execution.
    - Files are split into work units of `BatchSize` lines each
    - File line counting is performed
    - Remainder threshold logic applies for last batch
+   - Work units include `start_line`, `end_line`, `total_lines` fields
 
 2. **Whole File Mode** (`BatchSize = 0` or `nil`):
    - Each file becomes exactly one work unit
    - Line counting is skipped for performance
-   - `start_line = 0`, `end_line` set to large sentinel value (e.g., `math.MaxInt32`)
-   - `total_lines` set to sentinel value or unknown indicator
+   - Line range fields (`start_line`, `end_line`, `total_lines`) omitted from work units
    - Executor reads entire file without line range constraints
 
 **Validation Rules**:

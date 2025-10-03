@@ -243,7 +243,7 @@ EOF
 
 ---
 
-### Scenario 6: Measures Folder Path Mode
+### Scenario 6: Measures Path Mode
 
 **Use Case**: Apply all measures from a folder without listing them individually
 
@@ -253,11 +253,11 @@ EOF
   --batch-size=500 \
   --base-path=/data/bundles \
   --measures-path=/data/measures/2023/q4 \
-  --use-measures-folder-path=true \
+  --use-measures-path=true \
   --distributor=stdout
 ```
 
-**Result**: Each work unit includes `measures_folder_path` field instead of `measures` array:
+**Result**: Each work unit includes `measures_path` field (absolute path) instead of `measures` array:
 
 ```json
 {
@@ -267,7 +267,7 @@ EOF
   "start_line": 0,
   "end_line": 499,
   "total_lines": 500,
-  "measures_folder_path": "measures/2023/q4",
+  "measures_path": "/data/measures/2023/q4",
   "base_path": "/data/bundles",
   "created_at": "2025-10-03T10:00:00.000Z"
 }
@@ -277,6 +277,7 @@ EOF
 - Dynamic measure sets (add/remove measures without redeploying)
 - Smaller work unit payloads
 - Executor discovers measures at runtime
+- Measures path is absolute, independent of base_path
 
 ---
 
@@ -298,22 +299,22 @@ EOF
 - One work unit per file
 - Simpler executor logic
 
-**Work Unit Example**:
+**Work Unit Example** (note: no `start_line`, `end_line`, or `total_lines` fields):
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "work_unit_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "file_path": "patients/2023/jan/bundle-001.ndjson",
-  "start_line": 0,
-  "end_line": 2147483647,
-  "total_lines": 2147483647,
-  "measures": ["measures/cms-125-v10.json"],
+  "measures": [
+    "/data/measures/cms-125-v10.json",
+    "/data/measures/cms-130-v10.json"
+  ],
   "base_path": "/data/bundles",
   "created_at": "2025-10-03T10:00:00.000Z"
 }
 ```
 
-**Note**: `end_line` and `total_lines` set to sentinel value (`math.MaxInt32`). Executor reads entire file.
+**Note**: Line range fields are omitted. Executor detects absence and reads entire file.
 
 ---
 
@@ -361,15 +362,26 @@ curl -X PUT http://localhost:8080/config \
   -d '{"completion_ttl": "20m"}'
 ```
 
-**Invalid Update (Should Fail)**:
+**Update Batch Size While Running (Graceful Change)**:
 ```bash
-# Try to change batch_size while running (not allowed)
+# Adjust batch size mid-execution (applies to remaining files)
 curl -X PUT http://localhost:8080/config \
   -H "Content-Type: application/json" \
   -d '{"batch_size": 1000}'
 
+# Expected: 200 OK
+# New batch size applies to files not yet processed
+```
+
+**Invalid Update (Should Fail)**:
+```bash
+# Try to change distributor type while running (not allowed)
+curl -X PUT http://localhost:8080/config \
+  -H "Content-Type: application/json" \
+  -d '{"distributor_type": "file"}'
+
 # Expected: 400 Bad Request
-# {"error": "Cannot modify batch_size while job is running"}
+# {"error": "Cannot modify distributor_type while job is running"}
 ```
 
 **Cleanup**:

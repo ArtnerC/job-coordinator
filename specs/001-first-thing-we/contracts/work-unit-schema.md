@@ -19,9 +19,6 @@ Work units are serialized as JSON and sent to the configured distribution destin
     "job_id",
     "work_unit_id",
     "file_path",
-    "start_line",
-    "end_line",
-    "total_lines",
     "base_path",
     "created_at"
   ],
@@ -43,29 +40,29 @@ Work units are serialized as JSON and sent to the configured distribution destin
     },
     "start_line": {
       "type": "integer",
-      "description": "Starting line index (0-based, inclusive)",
+      "description": "Starting line index (0-based, inclusive). Omitted when batch_size=0",
       "minimum": 0
     },
     "end_line": {
       "type": "integer",
-      "description": "Ending line index (0-based, inclusive)",
+      "description": "Ending line index (0-based, inclusive). Omitted when batch_size=0",
       "minimum": 0
     },
     "total_lines": {
       "type": "integer",
-      "description": "Number of lines in this work unit",
+      "description": "Number of lines in this work unit. Omitted when batch_size=0",
       "minimum": 1
     },
     "measures": {
       "type": "array",
-      "description": "List of measure file paths to apply (mutually exclusive with measures_folder_path)",
+      "description": "List of absolute measure file paths to apply (mutually exclusive with measures_path)",
       "items": {
         "type": "string"
       }
     },
-    "measures_folder_path": {
+    "measures_path": {
       "type": "string",
-      "description": "Relative path to folder containing all measures to apply (mutually exclusive with measures)"
+      "description": "Absolute path to folder containing all measures to apply (mutually exclusive with measures)"
     },
     "base_path": {
       "type": "string",
@@ -81,10 +78,10 @@ Work units are serialized as JSON and sent to the configured distribution destin
   "oneOf": [
     {
       "required": ["measures"],
-      "not": { "required": ["measures_folder_path"] }
+      "not": { "required": ["measures_path"] }
     },
     {
-      "required": ["measures_folder_path"],
+      "required": ["measures_path"],
       "not": { "required": ["measures"] }
     }
   ]
@@ -122,13 +119,34 @@ Work units are serialized as JSON and sent to the configured distribution destin
   "start_line": 0,
   "end_line": 999,
   "total_lines": 1000,
-  "measures_folder_path": "measures/2023/q4",
+  "measures_path": "/data/measures/2023/q4",
   "base_path": "/data/bundles",
   "created_at": "2025-10-03T10:00:01.000Z"
 }
 ```
 
-**Validation Rule**: Exactly one of `measures` or `measures_folder_path` MUST be provided. If `measures_folder_path` is specified, the executor is responsible for discovering all measure files in that folder (relative to `base_path`).
+**Example 3: Whole File Mode (batch_size=0)**
+
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "work_unit_id": "9e4g8901-9647-62fg-c66d-g29he3h12cg9",
+  "file_path": "patients/2023/feb/bundle-003.ndjson",
+  "measures": [
+    "/data/measures/cms-125-v10.json",
+    "/data/measures/cms-130-v10.json"
+  ],
+  "base_path": "/data/bundles",
+  "created_at": "2025-10-03T10:00:02.000Z"
+}
+```
+
+**Validation Rules**: 
+- Exactly one of `measures` or `measures_path` MUST be provided (mutually exclusive)
+- If `measures_path` is specified, it MUST be an absolute path; executor discovers all measure files in that folder
+- If `measures` is specified, each path MUST be absolute
+- `start_line`, `end_line`, and `total_lines` are optional; omitted when `batch_size=0` (whole file mode)
+- When line fields omitted, executor processes entire file without line range constraints
 
 ---
 
@@ -230,20 +248,25 @@ Executors consuming work units MUST:
 1. **Read Lines from File**:
    - Construct full path: `{base_path}/{file_path}`
    - Open file for reading
+   
+   **If `start_line` and `end_line` provided** (batched mode):
    - Skip first `start_line` lines (0-indexed)
    - Read lines from `start_line` to `end_line` (inclusive)
+   - Parse each line as FHIR Bundle JSON
+   
+   **If `start_line` and `end_line` omitted** (whole file mode):
+   - Read entire file from beginning to end
    - Parse each line as FHIR Bundle JSON
 
 2. **Load Measures**:
    
    **Option A: Explicit Measure List** (if `measures` field provided):
    - For each measure in `measures` array:
-     - Construct full path: `{base_path}/{measure_path}`
-     - Load measure definition
+     - Load measure definition from absolute path
      - Parse as CQL measure
    
-   **Option B: Measures Folder** (if `measures_folder_path` field provided):
-   - Construct folder path: `{base_path}/{measures_folder_path}`
+   **Option B: Measures Folder** (if `measures_path` field provided):
+   - Use absolute path from `measures_path`
    - Discover all measure files in folder (e.g., `*.json`, `*.cql`)
    - For each discovered measure file:
      - Load measure definition

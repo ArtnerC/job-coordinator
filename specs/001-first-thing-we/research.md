@@ -357,32 +357,43 @@ patients/2023/feb/bundle-003.ndjson
 
 ---
 
-### 13. Measures Folder Path Support
+### 13. Measures Path Support
 
 **Decision**: Support both explicit measure lists and folder path references in work units
 
 **Rationale**:
-- **Use Case 1**: Specific measures known upfront → use `measures` array
-- **Use Case 2**: All measures in folder should be applied → use `measures_folder_path`
+- **Use Case 1**: Specific measures known upfront → use `measures` array with absolute paths
+- **Use Case 2**: All measures in folder should be applied → use `measures_path` with absolute path
 - Simplifies configuration when measure set is dynamic or large
 - Executor performs measure discovery at runtime from folder
 - Reduces work unit size when many measures exist
 
-**Validation**: Exactly one of `measures` or `measures_folder_path` must be provided (mutually exclusive)
+**Key Design Decision**: `measures_path` is absolute, NOT relative to `base_path`
+- `base_path` is for patient bundle files only
+- Measures can be in completely different location
+- Clearer separation of concerns
+
+**Validation**: 
+- Exactly one of `measures` or `measures_path` must be provided (mutually exclusive)
+- If `measures` provided: each path must be absolute
+- If `measures_path` provided: must be absolute path
 
 **Executor Contract**:
-- If `measures_folder_path` provided:
-  - Construct full path: `{base_path}/{measures_folder_path}`
+- If `measures_path` provided:
+  - Use absolute path directly (no base_path prepending)
   - Discover all measure files (e.g., `*.json`, `*.cql`)
   - Sort measures by name for consistent execution order
   - Load and apply each measure
 
-**Configuration Flag**: `--use-measures-folder-path` boolean flag to enable folder mode globally
+**Configuration**: 
+- `--use-measures-path` boolean flag to enable path mode globally
+- `--measures-to-run` comma-separated list of specific measure paths (pending state only)
+- Validation: Cannot set `use_measures_path=false` without providing `measures_to_run`
 
 **Implementation**: 
-- Add `measures_folder_path` field to WorkUnit schema
+- Add `measures_path` field to WorkUnit schema (not `measures_folder_path`)
 - Update JSON schema with `oneOf` constraint
-- Add `UseMeasuresFolderPath` to JobConfig
+- Add `UseMeasuresPath` and `MeasuresToRun` to JobConfig
 
 ---
 
@@ -403,49 +414,62 @@ patients/2023/feb/bundle-003.ndjson
 - When `batch_size=0` or `nil`:
   - Skip file line counting entirely
   - Create one work unit per file
-  - Set `start_line=0`
-  - Set `end_line` to sentinel value (e.g., `math.MaxInt32` or `-1`)
-  - Set `total_lines` to sentinel value to indicate "whole file"
-- Executor recognizes sentinel values and reads entire file without line range constraints
+  - **Omit** `start_line`, `end_line`, and `total_lines` fields from work unit JSON
+  - Executor detects absence of line fields and reads entire file
+- Simpler than sentinel values, clearer intent
 
 **Validation**:
 - `batch_size >= 0` (0 is valid)
 - When `batch_size=0`, `remainder_threshold` is ignored
+- Line fields (`start_line`, `end_line`, `total_lines`) must be either all present or all absent
 
 **Configuration**: `--batch-size=0` flag or env var `BATCH_SIZE=0`
 
-**Documentation**: Clearly document sentinel value conventions in work unit schema
+**Graceful Runtime Changes**: `batch_size` can be changed during `running` or `paused` states
+- Applies only to files not yet processed
+- Does not affect already-distributed work units
 
 ---
 
-### 15. Runtime Configuration Endpoint
+### 15. Runtime Configuration Endpoint with Graceful Updates
 
-**Decision**: Add `/config` REST endpoints for configuration inspection and modification
+**Decision**: Add `/config` REST endpoints for configuration inspection and modification, with graceful runtime changes
 
 **Rationale**:
-- **Flexibility**: Adjust configuration before job starts without restart
+- **Flexibility**: Adjust configuration even during job execution
 - **Observability**: Inspect current configuration for debugging
+- **Graceful Changes**: Configuration updates apply to remaining work without disrupting in-flight processing
 - **Use Cases**:
-  - Test different batch sizes without redeploying
-  - Switch distributor configuration dynamically
+  - Adjust batch size mid-execution based on performance
+  - Scale concurrent processors up/down based on load
   - Extend TTL for long-running monitoring
-  - Toggle between measures array and folder path mode
+  - Configure measures before job start
 
 **Endpoints**:
 - `GET /config`: Return current configuration
 - `PUT /config`: Update configuration with validation
 
 **Configuration Modification Rules**:
-- **Runtime-Modifiable** (any state):
-  - `completion_ttl`: Extend or shorten retention period
+
+1. **Always Modifiable** (any non-terminal state):
+   - `completion_ttl`: Extend or shorten retention period
+   
+2. **Gracefully Runtime-Modifiable** (pending, running, paused):
+   - `batch_size`: Applies to files not yet processed
+   - `remainder_threshold`: Applies to files not yet processed
+   - `concurrent_file_processors`: Worker pool adjusts gracefully
+   - Changes do NOT affect already-distributed work units
+   - File processor pool scales up/down dynamically
   
-- **Pre-Start Only** (pending state):
-  - `batch_size`: Must be set before job starts
-  - `remainder_threshold`: Must be set before job starts
-  - `concurrent_file_processors`: Must be set before job starts
-  - `distributor_type`: Must be set before job starts
-  - `distributor_config`: Must be set before job starts
-  - `use_measures_folder_path`: Must be set before job starts
+3. **Pre-Start Only** (pending state only):
+   - `distributor_type`: Cannot change distribution method after start
+   - `distributor_config`: Cannot change distributor config after start
+   - `use_measures_path`: Cannot toggle between measures modes after start
+   - `measures_to_run`: Must configure measure list before starting
+
+**Measures Configuration Validation**:
+- `use_measures_path` can be changed from `true` to `false` only if `measures_to_run` is provided
+- If `use_measures_path=false` and `measures_to_run` is empty, reject with 400
 
 **Validation**:
 - State-based validation: Check job status before allowing modification
@@ -453,9 +477,10 @@ patients/2023/feb/bundle-003.ndjson
 - Return 400 Bad Request with descriptive errors
 
 **Implementation**:
-- Add config handlers to `internal/api/handlers.go`
-- Add config validation logic to `internal/config/config.go`
-- Add configuration mutation methods with state checks
+- Add config handlers to `internal/api/config_handlers.go`
+- Add graceful config mutation logic to `internal/config/mutation.go`
+- File processor pool monitors config changes and adjusts concurrency
+- Batch splitter reads latest config for each file processed
 
 ---
 
