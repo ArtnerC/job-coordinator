@@ -159,10 +159,12 @@ func TestParseMeasuresManifest(t *testing.T) {
 		}
 	}
 
-	// All paths should be absolute
+	// Note: On Windows, paths starting with / are not considered absolute
+	// but they should still be valid POSIX-style absolute paths
 	for _, path := range paths {
-		if !filepath.IsAbs(path) {
-			t.Errorf("ParseMeasuresManifest() returned relative path %q, want absolute", path)
+		// Check that paths start with / (Unix-style absolute path)
+		if len(path) == 0 || path[0] != '/' {
+			t.Errorf("ParseMeasuresManifest() returned path %q without leading /, want Unix-style absolute path", path)
 		}
 	}
 }

@@ -4,18 +4,6 @@ import (
 	"testing"
 )
 
-// JobStatus represents the current state of a job
-type JobStatus string
-
-const (
-	JobStatusPending   JobStatus = "pending"
-	JobStatusRunning   JobStatus = "running"
-	JobStatusPaused    JobStatus = "paused"
-	JobStatusCompleted JobStatus = "completed"
-	JobStatusFailed    JobStatus = "failed"
-	JobStatusCancelled JobStatus = "cancelled"
-)
-
 func TestJobStateTransitions(t *testing.T) {
 	tests := []struct {
 		name        string

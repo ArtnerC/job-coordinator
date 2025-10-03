@@ -1,15 +1,9 @@
 package processor
 
 import (
+	"fmt"
 	"testing"
 )
-
-// BatchRange represents a range of lines in a file
-type BatchRange struct {
-	StartLine  *int
-	EndLine    *int
-	TotalLines *int
-}
 
 func TestSplitIntoBatches(t *testing.T) {
 	tests := []struct {
@@ -132,10 +126,5 @@ func formatBatchRange(br BatchRange) string {
 	if br.StartLine == nil {
 		return "{nil, nil, nil}"
 	}
-	return sprintf("{%d, %d, %d}", *br.StartLine, *br.EndLine, *br.TotalLines)
-}
-
-func sprintf(format string, args ...interface{}) string {
-	// Simple sprintf implementation for formatting
-	return format // Placeholder - will use fmt.Sprintf in actual implementation
+	return fmt.Sprintf("{%d, %d, %d}", *br.StartLine, *br.EndLine, *br.TotalLines)
 }

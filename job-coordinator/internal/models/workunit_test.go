@@ -5,32 +5,6 @@ import (
 	"time"
 )
 
-// WorkUnit represents a single discrete unit of work
-type WorkUnit struct {
-	ID           string
-	JobID        string
-	FilePath     string
-	StartLine    *int
-	EndLine      *int
-	TotalLines   *int
-	Measures     []string
-	MeasuresPath *string
-	BasePath     string
-	CreatedAt    time.Time
-	Status       WorkUnitStatus
-	Error        *string
-}
-
-// WorkUnitStatus represents the current state of a work unit
-type WorkUnitStatus string
-
-const (
-	WorkUnitStatusPending      WorkUnitStatus = "pending"
-	WorkUnitStatusDistributing WorkUnitStatus = "distributing"
-	WorkUnitStatusDistributed  WorkUnitStatus = "distributed"
-	WorkUnitStatusFailed       WorkUnitStatus = "failed"
-)
-
 func TestWorkUnitValidation(t *testing.T) {
 	tests := []struct {
 		name    string

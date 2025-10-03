@@ -5,26 +5,6 @@ import (
 	"time"
 )
 
-// Config represents the job coordinator configuration
-type Config struct {
-	JobID                     string
-	AutoStart                 bool
-	BatchSize                 int
-	RemainderThreshold        float64
-	BasePath                  string
-	ManifestPath              *string
-	MeasuresPath              string
-	MeasuresToRun             []string
-	MeasuresManifestPath      *string
-	UseMeasuresPath           bool
-	DistributorType           string
-	DistributorConfig         map[string]string
-	CompletionTTL             time.Duration
-	ConcurrentFileProcessors  int
-	ScaleTestCount            *int
-	APIPort                   int
-}
-
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -39,10 +19,10 @@ func TestValidateConfig(t *testing.T) {
 				AutoStart:                true,
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
 				UseMeasuresPath:          false,
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				DistributorConfig:        map[string]string{},
 				CompletionTTL:            10 * time.Minute,
@@ -56,9 +36,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                -1,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 10,
@@ -71,9 +51,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       -0.1,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 10,
@@ -86,9 +66,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       1.5,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 10,
@@ -116,9 +96,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "invalid",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 10,
@@ -131,9 +111,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 0,
@@ -146,9 +126,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: -1,
@@ -161,8 +141,8 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
 				UseMeasuresPath:          false,
 				MeasuresToRun:            []string{},
 				DistributorType:          "stdout",
@@ -177,9 +157,9 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                0,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
-				MeasuresToRun:            []string{"/data/measures/cms-125.json"},
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
+				MeasuresToRun:            []string{"C:\\data\\measures\\cms-125.json"},
 				DistributorType:          "stdout",
 				CompletionTTL:            10 * time.Minute,
 				ConcurrentFileProcessors: 10,
@@ -191,8 +171,8 @@ func TestValidateConfig(t *testing.T) {
 			config: Config{
 				BatchSize:                500,
 				RemainderThreshold:       0.2,
-				BasePath:                 "/data/bundles",
-				MeasuresPath:             "/data/measures",
+				BasePath:                 "C:\\data\\bundles",
+				MeasuresPath:             "C:\\data\\measures",
 				UseMeasuresPath:          true,
 				MeasuresToRun:            []string{},
 				DistributorType:          "stdout",
