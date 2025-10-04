@@ -2,23 +2,25 @@
 
 **Feature**: Job Coordinator Service  
 **Date**: 2025-01-21  
-**Status**: In Progress (28/46 tasks complete - 61%)
+**Status**: In Progress (39/46 tasks complete - 85%)
 
 **Completed Tasks**:
 - ✅ T001-T003: Project setup (go.mod, Dockerfile, Terraform)
+- ✅ T004-T013: REST API contract tests and work unit schema tests (38 integration tests)
 - ✅ T014-T020: TDD tests (batch splitter, file processor, config, job, workunit, manifest, measures)
 - ✅ T021-T022: Job and WorkUnit models with tests
 - ✅ T025: Response models
+- ✅ T026: Viper-based config loading with CLI flags (commit 2ba494c)
 - ✅ T027-T031: File processing implementations (line counter, batch splitter, manifest, measures, file discovery)
 - ✅ T032-T035: Distributors (pubsub, stdout, file) with factory
 
 **Remaining Tasks**:
-- ⏳ T004-T013: REST API contract tests and work unit schema tests (10 tasks)
-- ⏳ T023-T024: JobConfig and FileManifest models (2 tasks)
-- ⏳ T026: Viper config loading (1 task)
+- ⏳ T023-T024: JobConfig and FileManifest models (2 tasks) - Note: JobConfig exists as Config in internal/config
 - ⏳ T036-T039: Coordinator, TTL, API handlers, main (4 tasks)
 - ⏳ T040-T043: Integration and wiring (4 tasks)
 - ⏳ T044-T046: Polish (unit tests, E2E, documentation) (3 tasks)
+
+**Current Status**: 109 tests passing (71 unit + 38 integration), config loading complete, ready for coordinator implementation
 
 ## Task List
 
