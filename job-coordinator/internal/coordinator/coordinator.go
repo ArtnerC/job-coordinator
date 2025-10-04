@@ -71,10 +71,11 @@ func (c *Coordinator) UpdateConfig(newCfg *config.Config) error {
 // ProcessJob orchestrates the entire job processing workflow.
 func (c *Coordinator) ProcessJob() error {
 	c.mu.Lock()
-	if c.job.Status != "pending" && c.job.Status != "paused" {
+	if c.job.Status != "pending" && c.job.Status != "paused" && c.job.Status != "running" {
 		c.mu.Unlock()
 		return fmt.Errorf("cannot start job in status: %s", c.job.Status)
 	}
+	// Ensure status is running (Start() may have already set it)
 	c.job.Status = "running"
 	c.mu.Unlock()
 
@@ -200,8 +201,11 @@ func (c *Coordinator) processFiles(files []string, measures []string) error {
 
 // processFile processes a single FHIR bundle file: counts lines, splits batches, creates work units.
 func (c *Coordinator) processFile(file string, measures []string) error {
+	// Construct full path from base path + relative file path
+	fullPath := filepath.Join(c.cfg.BasePath, file)
+	
 	// Count lines in the file
-	lineCount, err := processor.CountLines(file)
+	lineCount, err := processor.CountLines(fullPath)
 	if err != nil {
 		c.incrementErrorCount()
 		return fmt.Errorf("failed to count lines: %w", err)
