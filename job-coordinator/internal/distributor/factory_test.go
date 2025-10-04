@@ -41,8 +41,6 @@ func TestNewDistributor(t *testing.T) {
 			wantErr:         true,
 			errMsg:          "output_path",
 		},
-		// Note: PubSub distributor creation test skipped because it requires GCP credentials
-		// Integration tests would cover this with proper GCP setup
 		{
 			name:            "create pubsub distributor without project_id",
 			distributorType: "pubsub",
