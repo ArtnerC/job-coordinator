@@ -1,0 +1,5 @@
+{"resourceType":"Bundle","type":"collection","id":"patient-004","entry":[{"resource":{"resourceType":"Patient","id":"patient-004","name":[{"family":"Williams","given":["Alice"]}],"gender":"female","birthDate":"1975-03-20"}}]}
+{"resourceType":"Bundle","type":"collection","id":"patient-005","entry":[{"resource":{"resourceType":"Patient","id":"patient-005","name":[{"family":"Brown","given":["Charlie"]}],"gender":"male","birthDate":"1988-07-14"}}]}
+{"resourceType":"Bundle","type":"collection","id":"patient-006","entry":[{"resource":{"resourceType":"Patient","id":"patient-006","name":[{"family":"Davis","given":["Diana"]}],"gender":"female","birthDate":"1995-11-08"}}]}
+{"resourceType":"Bundle","type":"collection","id":"patient-007","entry":[{"resource":{"resourceType":"Patient","id":"patient-007","name":[{"family":"Miller","given":["Edward"]}],"gender":"male","birthDate":"1982-04-25"}}]}
+{"resourceType":"Bundle","type":"collection","id":"patient-008","entry":[{"resource":{"resourceType":"Patient","id":"patient-008","name":[{"family":"Wilson","given":["Fiona"]}],"gender":"female","birthDate":"1990-09-12"}}]}

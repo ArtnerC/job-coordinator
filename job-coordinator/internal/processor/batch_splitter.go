@@ -16,6 +16,14 @@ func SplitIntoBatches(totalLines, batchSize int, threshold float64) []BatchRange
 		return []BatchRange{{nil, nil, nil}}
 	}
 
+	// If file is smaller than batch size, return single batch
+	if totalLines <= batchSize {
+		start := 0
+		end := totalLines - 1
+		total := totalLines
+		return []BatchRange{{&start, &end, &total}}
+	}
+
 	// Calculate number of full batches and remainder
 	fullBatches := totalLines / batchSize
 	remainder := totalLines % batchSize

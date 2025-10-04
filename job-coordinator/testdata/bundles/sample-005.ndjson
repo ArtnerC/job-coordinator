@@ -1,0 +1,1 @@
+{"resourceType":"Bundle","type":"collection","id":"patient-039","entry":[{"resource":{"resourceType":"Patient","id":"patient-039","name":[{"family":"Nelson","given":["Jack"]}],"gender":"male","birthDate":"1980-07-12"}}]}
