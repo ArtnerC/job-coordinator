@@ -93,10 +93,19 @@ func (c *Coordinator) ProcessJob() error {
 		return fmt.Errorf("measure discovery failed: %w", err)
 	}
 
-	// Process files concurrently
-	if err := c.processFiles(files, measures); err != nil {
-		c.updateJobStatus(models.JobStatusFailed)
-		return fmt.Errorf("file processing failed: %w", err)
+	// Check if scale test mode is enabled
+	if c.cfg.ScaleTestCount != nil && *c.cfg.ScaleTestCount > 0 {
+		// Scale test mode: process specified number of lines
+		if err := c.processScaleTest(files, measures, *c.cfg.ScaleTestCount); err != nil {
+			c.updateJobStatus(models.JobStatusFailed)
+			return fmt.Errorf("scale test processing failed: %w", err)
+		}
+	} else {
+		// Normal mode: process all files
+		if err := c.processFiles(files, measures); err != nil {
+			c.updateJobStatus(models.JobStatusFailed)
+			return fmt.Errorf("file processing failed: %w", err)
+		}
 	}
 
 	// Mark job as completed
@@ -157,6 +166,76 @@ func (c *Coordinator) discoverMeasureFiles(dir string) ([]string, error) {
 		return nil, err
 	}
 	return measures, nil
+}
+
+// processScaleTest processes files in scale test mode where we want to generate
+// a specific number of total lines worth of work units. It cycles through the actual
+// file's batch pattern repeatedly until reaching the target line count.
+func (c *Coordinator) processScaleTest(files []string, measures []string, targetLineCount int) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files available for scale test")
+	}
+
+	// Use first file and count its lines
+	firstFile := files[0]
+	fullPath := filepath.Join(c.cfg.BasePath, firstFile)
+	linesPerFile, err := processor.CountLines(fullPath)
+	if err != nil {
+		c.incrementErrorCount()
+		return fmt.Errorf("failed to count lines in %s: %w", firstFile, err)
+	}
+
+	log.Printf("Scale test mode: target=%d lines, file=%s has %d lines, batch_size=%d", 
+		targetLineCount, firstFile, linesPerFile, c.cfg.BatchSize)
+
+	// Apply batch splitting formula to the actual file to get the batch pattern
+	fileBatches := processor.SplitIntoBatches(linesPerFile, c.cfg.BatchSize, c.cfg.RemainderThreshold)
+	
+	// Cycle through the file's batch pattern until we reach target line count
+	linesGenerated := 0
+	batchIndex := 0
+	workUnitCount := 0
+	
+	for linesGenerated < targetLineCount {
+		// Get the next batch from the pattern (cycling)
+		batch := fileBatches[batchIndex%len(fileBatches)]
+		
+		// Calculate how many lines this batch should have
+		batchLines := *batch.TotalLines
+		remainingLines := targetLineCount - linesGenerated
+		
+		// If this batch would exceed target, truncate it
+		if batchLines > remainingLines {
+			batchLines = remainingLines
+			// Create truncated batch
+			start := *batch.StartLine
+			end := start + batchLines - 1
+			truncatedBatch := processor.BatchRange{
+				StartLine:  &start,
+				EndLine:    &end,
+				TotalLines: &batchLines,
+			}
+			if err := c.distributeBatch(firstFile, truncatedBatch, measures); err != nil {
+				c.incrementErrorCount()
+				return err
+			}
+		} else {
+			// Use full batch
+			if err := c.distributeBatch(firstFile, batch, measures); err != nil {
+				c.incrementErrorCount()
+				return err
+			}
+		}
+		
+		linesGenerated += batchLines
+		batchIndex++
+		workUnitCount++
+	}
+
+	log.Printf("Scale test: created %d work units from %d target lines (pattern from %d-line file)", 
+		workUnitCount, targetLineCount, linesPerFile)
+
+	return nil
 }
 
 // processFiles processes all discovered files concurrently using a worker pool.
