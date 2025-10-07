@@ -41,6 +41,21 @@ func NewCoordinator(job *models.Job, cfg *config.Config, dist distributor.Distri
 	}
 }
 
+// joinPath joins a base path with a relative path, handling both local paths and cloud storage URLs
+func joinPath(basePath, relativePath string) string {
+	// Check if basePath is a cloud storage URL
+	if strings.HasPrefix(basePath, "gs://") || strings.HasPrefix(basePath, "s3://") || strings.HasPrefix(basePath, "file://") {
+		// For cloud storage URLs, use forward slashes and append properly
+		base := strings.TrimSuffix(basePath, "/")
+		rel := strings.TrimPrefix(relativePath, "/")
+		// Replace backslashes with forward slashes for Windows paths in relative part
+		rel = strings.ReplaceAll(rel, "\\", "/")
+		return base + "/" + rel
+	}
+	// For local paths, use filepath.Join
+	return filepath.Join(basePath, relativePath)
+}
+
 // GetJob returns the current job state (thread-safe).
 func (c *Coordinator) GetJob() *models.Job {
 	c.mu.RLock()
@@ -201,7 +216,7 @@ func (c *Coordinator) processScaleLoad(files []string, measures []string, target
 
 	// Use first file and count its lines
 	firstFile := files[0]
-	fullPath := filepath.Join(c.cfg.BasePath, firstFile)
+	fullPath := joinPath(c.cfg.BasePath, firstFile)
 	linesPerFile, err := processor.CountLines(fullPath)
 	if err != nil {
 		c.incrementErrorCount()
@@ -304,7 +319,7 @@ func (c *Coordinator) processFiles(files []string, measures []string) error {
 // processFile processes a single FHIR bundle file: counts lines, splits batches, creates work units.
 func (c *Coordinator) processFile(file string, measures []string) error {
 	// Construct full path from base path + relative file path
-	fullPath := filepath.Join(c.cfg.BasePath, file)
+	fullPath := joinPath(c.cfg.BasePath, file)
 	
 	// Count lines in the file
 	lineCount, err := processor.CountLines(fullPath)

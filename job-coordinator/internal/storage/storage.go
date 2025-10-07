@@ -98,6 +98,7 @@ func (r *Reader) Close() error {
 }
 
 // normalizePath converts various path formats to gocloud blob URLs
+// For cloud storage URLs with paths (e.g., gs://bucket/prefix), it adds ?prefix= query parameter
 func normalizePath(pathOrURL string) (string, error) {
 	// Already a URL with scheme
 	if strings.Contains(pathOrURL, "://") {
@@ -109,6 +110,21 @@ func normalizePath(pathOrURL string) (string, error) {
 		// Validate supported schemes
 		switch u.Scheme {
 		case "file", "gs", "s3":
+			// For gs:// and s3://, if there's a path component, convert it to ?prefix= query param
+			// This uses gocloud's PrefixedBucket feature automatically
+			if (u.Scheme == "gs" || u.Scheme == "s3") && u.Path != "" && u.Path != "/" {
+				// Extract host (bucket) and path (prefix)
+				bucket := u.Host
+				prefix := strings.TrimPrefix(u.Path, "/")
+				if prefix != "" {
+					// Construct URL with prefix query parameter
+					// gs://bucket/path -> gs://bucket?prefix=path/
+					if !strings.HasSuffix(prefix, "/") {
+						prefix += "/"
+					}
+					return fmt.Sprintf("%s://%s?prefix=%s", u.Scheme, bucket, url.QueryEscape(prefix)), nil
+				}
+			}
 			return pathOrURL, nil
 		default:
 			return "", fmt.Errorf("unsupported URL scheme: %s (supported: file://, gs://, s3://)", u.Scheme)

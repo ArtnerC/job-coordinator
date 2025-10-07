@@ -17,20 +17,22 @@ func TestNormalizePath(t *testing.T) {
 		checkFn func(t *testing.T, result string)
 	}{
 		{
-			name:  "gs URL unchanged",
+			name:  "gs URL with path converts to prefix query param",
 			input: "gs://my-bucket/path/to/files",
 			checkFn: func(t *testing.T, result string) {
-				if result != "gs://my-bucket/path/to/files" {
-					t.Errorf("expected gs:// URL unchanged, got %s", result)
+				expected := "gs://my-bucket?prefix=path%2Fto%2Ffiles%2F"
+				if result != expected {
+					t.Errorf("expected gs:// URL with prefix, got %s, want %s", result, expected)
 				}
 			},
 		},
 		{
-			name:  "s3 URL unchanged",
+			name:  "s3 URL with path converts to prefix query param",
 			input: "s3://my-bucket/path/to/files",
 			checkFn: func(t *testing.T, result string) {
-				if result != "s3://my-bucket/path/to/files" {
-					t.Errorf("expected s3:// URL unchanged, got %s", result)
+				expected := "s3://my-bucket?prefix=path%2Fto%2Ffiles%2F"
+				if result != expected {
+					t.Errorf("expected s3:// URL with prefix, got %s, want %s", result, expected)
 				}
 			},
 		},
