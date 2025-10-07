@@ -220,6 +220,56 @@ func TestTTLManagerCancel(t *testing.T) {
 	}
 }
 
+func TestDiscoverMeasures_RelativePaths(t *testing.T) {
+	// Test that discoverMeasures returns relative paths (just filenames)
+	cfg := &config.Config{
+		JobID:                    "test-job",
+		BatchSize:                500,
+		BasePath:                 "../../testdata/bundles",
+		MeasuresPath:             "../../testdata/measures",
+		DistributorType:          "stdout",
+		ConcurrentFileProcessors: 10,
+		CompletionTTL:            10 * time.Minute,
+	}
+
+	job := &models.Job{
+		ID:             "test-job",
+		Status:         models.JobStatusPending,
+		TotalWorkUnits: 0,
+		ErrorCount:     0,
+	}
+
+	dist := distributor.NewStdoutDistributor()
+	coord := NewCoordinator(job, cfg, dist)
+
+	// Discover measures using the public method
+	measures, err := coord.discoverMeasures()
+	if err != nil {
+		t.Fatalf("discoverMeasures failed: %v", err)
+	}
+
+	// Check that all returned paths are relative (no leading slashes or drive letters)
+	for _, measure := range measures {
+		// Should not have absolute path indicators
+		if len(measure) > 0 && (measure[0] == '/' || measure[0] == '\\') {
+			t.Errorf("Measure path %q starts with slash - should be relative", measure)
+		}
+		// On Windows, should not have drive letter
+		if len(measure) > 1 && measure[1] == ':' {
+			t.Errorf("Measure path %q contains drive letter - should be relative", measure)
+		}
+		// Should not contain the base directory name
+		if len(measure) > len("measures") && measure[0:8] == "measures" {
+			t.Errorf("Measure path %q contains 'measures' directory - should be relative to measures dir", measure)
+		}
+	}
+
+	// At least one measure should be found
+	if len(measures) == 0 {
+		t.Error("No measures found in testdata/measures")
+	}
+}
+
 func TestGracefulShutdown(t *testing.T) {
 	cfg := &config.Config{
 		JobID:                    "test-job",

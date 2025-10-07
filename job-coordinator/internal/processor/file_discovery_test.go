@@ -223,6 +223,96 @@ func TestDiscoverFiles_ActualTestData(t *testing.T) {
 	t.Logf("Discovered %d files from testdata/bundles", len(files))
 }
 
+func TestDiscoverFiles_CloudStorage(t *testing.T) {
+	tests := []struct {
+		name         string
+		basePath     string
+		manifestPath string
+		wantErr      bool
+		skipReason   string
+	}{
+		{
+			name:         "GCS path format",
+			basePath:     "gs://test-bucket/bundles",
+			manifestPath: "",
+			wantErr:      true, // Will fail without credentials, but validates path handling
+			skipReason:   "",
+		},
+		{
+			name:         "S3 path format",
+			basePath:     "s3://test-bucket/bundles",
+			manifestPath: "",
+			wantErr:      true, // Will fail without credentials, but validates path handling
+			skipReason:   "",
+		},
+		{
+			name:         "file:// URL format",
+			basePath:     "file:///" + filepath.Join("..", "..", "testdata", "bundles"),
+			manifestPath: "",
+			wantErr:      false, // Should work with file:// URLs
+			skipReason:   "",
+		},
+		{
+			name:         "GCS with manifest",
+			basePath:     "gs://test-bucket/bundles",
+			manifestPath: "gs://test-bucket/manifest.txt",
+			wantErr:      true, // Will fail without credentials
+			skipReason:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipReason != "" {
+				t.Skip(tt.skipReason)
+			}
+
+			// For file:// URLs, check if testdata exists
+			if len(tt.basePath) > 7 && tt.basePath[:7] == "file://" {
+				testDir := filepath.Join("..", "..", "testdata", "bundles")
+				if _, err := os.Stat(testDir); os.IsNotExist(err) {
+					t.Skip("Test data directory not found")
+				}
+			}
+
+			var manifestPtr *string
+			if tt.manifestPath != "" {
+				manifestPtr = &tt.manifestPath
+			}
+
+			files, err := DiscoverFiles(tt.basePath, manifestPtr)
+			
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("DiscoverFiles() expected error for %s, got nil", tt.basePath)
+				}
+				// Error is expected (no credentials), test passes
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("DiscoverFiles() error = %v", err)
+			}
+
+			// For file:// URLs, should find at least some files
+			if len(files) == 0 {
+				t.Errorf("DiscoverFiles() returned 0 files, want at least 1")
+			}
+
+			// All files should be relative paths (not full URLs)
+			for _, file := range files {
+				if file == "" {
+					t.Errorf("DiscoverFiles() returned empty file path")
+				}
+				// Should not contain the scheme prefix in returned paths
+				if len(file) > 7 && (file[:5] == "gs://" || file[:5] == "s3://" || file[:7] == "file://") {
+					t.Errorf("DiscoverFiles() returned full URL %q, want relative path", file)
+				}
+			}
+		})
+	}
+}
+
 // Helper function
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 

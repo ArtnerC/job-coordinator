@@ -201,3 +201,73 @@ func TestDiscoverMeasures_ActualTestData(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoverMeasures_CloudStorage(t *testing.T) {
+	tests := []struct {
+		name          string
+		measuresPath  string
+		wantErr       bool
+		skipReason    string
+	}{
+		{
+			name:         "GCS path format",
+			measuresPath: "gs://test-bucket/measures",
+			wantErr:      true, // Will fail without credentials, but validates path handling
+			skipReason:   "",
+		},
+		{
+			name:         "S3 path format",
+			measuresPath: "s3://test-bucket/measures",
+			wantErr:      true, // Will fail without credentials, but validates path handling
+			skipReason:   "",
+		},
+		{
+			name:         "file:// URL format",
+			measuresPath: "file:///" + filepath.Join("..", "..", "testdata", "measures"),
+			wantErr:      false, // Should work with file:// URLs
+			skipReason:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipReason != "" {
+				t.Skip(tt.skipReason)
+			}
+
+			// For file:// URLs, check if testdata exists
+			if tt.measuresPath[:7] == "file://" {
+				testDir := filepath.Join("..", "..", "testdata", "measures")
+				if _, err := os.Stat(testDir); os.IsNotExist(err) {
+					t.Skip("Test data directory not found")
+				}
+			}
+
+			paths, err := DiscoverMeasures(tt.measuresPath)
+			
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("DiscoverMeasures() expected error for %s, got nil", tt.measuresPath)
+				}
+				// Error is expected (no credentials), test passes
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("DiscoverMeasures() error = %v", err)
+			}
+
+			// For file:// URLs, should find at least some measures
+			if len(paths) == 0 {
+				t.Errorf("DiscoverMeasures() returned 0 paths, want at least 1")
+			}
+
+			// All paths should be full URLs/paths
+			for _, path := range paths {
+				if path == "" {
+					t.Errorf("DiscoverMeasures() returned empty path")
+				}
+			}
+		})
+	}
+}

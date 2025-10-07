@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -54,6 +53,38 @@ func joinPath(basePath, relativePath string) string {
 	}
 	// For local paths, use filepath.Join
 	return filepath.Join(basePath, relativePath)
+}
+
+// stripBasePath removes the base path from a full path, returning just the relative portion.
+// Works for both local paths and cloud storage URLs.
+// Example: stripBasePath("gs://bucket/measures/cms-125.json", "gs://bucket/measures") -> "cms-125.json"
+// Example: stripBasePath("C:/path/to/measures/cms-125.json", "./measures") -> "cms-125.json"
+func stripBasePath(fullPath, basePath string) string {
+	// For cloud URLs, use string prefix matching
+	if strings.HasPrefix(basePath, "gs://") || strings.HasPrefix(basePath, "s3://") || strings.HasPrefix(basePath, "file://") {
+		base := strings.TrimSuffix(basePath, "/")
+		if strings.HasPrefix(fullPath, base+"/") {
+			return strings.TrimPrefix(fullPath, base+"/")
+		}
+		// If no slash separator, try direct prefix match
+		return strings.TrimPrefix(fullPath, base)
+	}
+	
+	// For local paths, convert basePath to absolute first for proper comparison
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		// Fallback: use basePath as-is
+		absBase = basePath
+	}
+	
+	// Use filepath.Rel to get the relative path
+	relPath, err := filepath.Rel(absBase, fullPath)
+	if err != nil {
+		// Fallback: try direct string prefix stripping
+		absBase = strings.TrimSuffix(absBase, string(filepath.Separator))
+		return strings.TrimPrefix(strings.TrimPrefix(fullPath, absBase), string(filepath.Separator))
+	}
+	return relPath
 }
 
 // GetJob returns the current job state (thread-safe).
@@ -165,6 +196,7 @@ func (c *Coordinator) discoverFiles() ([]string, error) {
 }
 
 // discoverMeasures discovers measure definitions based on configuration.
+// Returns paths relative to the measures directory (just filenames).
 func (c *Coordinator) discoverMeasures() ([]string, error) {
 	// If measures_to_run is explicitly provided, use it (optional)
 	if len(c.cfg.MeasuresToRun) > 0 {
@@ -181,29 +213,26 @@ func (c *Coordinator) discoverMeasures() ([]string, error) {
 	}
 
 	// Auto-discover measures from measures_path (default: ./measures)
+	// processor.DiscoverMeasures handles both local and cloud storage uniformly
 	if c.cfg.MeasuresPath != "" {
-		return c.discoverMeasureFiles(c.cfg.MeasuresPath)
+		absoluteMeasures, err := processor.DiscoverMeasures(c.cfg.MeasuresPath)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Convert absolute/full paths to relative paths (strip base directory)
+		relativeMeasures := make([]string, 0, len(absoluteMeasures))
+		for _, measure := range absoluteMeasures {
+			// Strip the base path to get relative path
+			// Works for both local paths and cloud URLs
+			relPath := stripBasePath(measure, c.cfg.MeasuresPath)
+			relativeMeasures = append(relativeMeasures, relPath)
+		}
+		
+		return relativeMeasures, nil
 	}
 
 	return nil, fmt.Errorf("no measure configuration provided")
-}
-
-// discoverMeasureFiles finds all JSON measure definition files in a directory.
-func (c *Coordinator) discoverMeasureFiles(dir string) ([]string, error) {
-	var measures []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(path, ".json") {
-			measures = append(measures, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return measures, nil
 }
 
 // processScaleLoad processes files in scale load mode where we want to generate
