@@ -94,7 +94,13 @@ func (d *StdoutDistributor) GetStatus() DistributorStatus {
 // WaitForCompletion ensures all output is flushed (no-op for stdout as writes are synchronous)
 func (d *StdoutDistributor) WaitForCompletion() error {
 	// For stdout, writes are synchronous, so nothing to wait for
-	// If writer implements Sync(), we could call it here
+	// If writer implements Sync(), we could call it, but os.Stdout.Sync() 
+	// fails on Windows with "invalid handle" error, so we skip it for stdout
+	if d.writer == os.Stdout {
+		return nil
+	}
+	
+	// For other writers (e.g., files in tests), try to sync
 	if syncer, ok := d.writer.(interface{ Sync() error }); ok {
 		return syncer.Sync()
 	}
