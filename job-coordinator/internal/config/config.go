@@ -59,9 +59,9 @@ func ValidateConfig(cfg *Config) error {
 
 // SetDefaults sets default values for optional configuration fields
 func SetDefaults(cfg *Config) {
-	if cfg.BatchSize == 0 {
-		cfg.BatchSize = 500
-	}
+	// BatchSize: 0 is valid (whole file mode) and is the default
+	// No default needed - 0 is intentional
+	
 	if cfg.RemainderThreshold == 0 {
 		cfg.RemainderThreshold = 0.2
 	}
@@ -134,7 +134,7 @@ func LoadConfig() (*Config, error) {
 	if !flagsInitialized {
 		pflag.String("job-id", "", "Unique job identifier (auto-generated if not provided)")
 		pflag.Bool("auto-start", false, "Automatically start job on coordinator launch")
-		pflag.Int("batch-size", 500, "Number of lines per work unit (0 for whole file)")
+		pflag.Int("batch-size", 0, "Number of lines per work unit (0 for whole file mode - default)")
 		pflag.Float64("remainder-threshold", 0.2, "Threshold for appending remainder to last batch (0.0-1.0)")
 		pflag.String("base-path", "", "Base directory containing patient bundle files (required)")
 		pflag.String("manifest-path", "", "Path to file manifest (optional, auto-discovers if not provided)")

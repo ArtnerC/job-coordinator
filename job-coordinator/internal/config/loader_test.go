@@ -27,7 +27,7 @@ func TestConfigStructValidation(t *testing.T) {
 	cfg := &Config{
 		JobID:                    "test-job",
 		AutoStart:                false,
-		BatchSize:                500,
+		BatchSize:                1000, // Explicitly set (not default 0)
 		RemainderThreshold:       0.2,
 		BasePath:                 "C:\\test\\data",
 		MeasuresPath:             "./measures",
@@ -48,9 +48,9 @@ func TestConfigStructValidation(t *testing.T) {
 		t.Errorf("Valid config failed validation: %v", err)
 	}
 
-	// Verify defaults were applied correctly
-	if cfg.BatchSize != 500 {
-		t.Errorf("Expected batch_size 500, got %d", cfg.BatchSize)
+	// Verify batch size was not overridden (it was explicitly set)
+	if cfg.BatchSize != 1000 {
+		t.Errorf("Expected batch_size 1000, got %d", cfg.BatchSize)
 	}
 
 	if cfg.RemainderThreshold != 0.2 {
@@ -72,8 +72,9 @@ func TestConfigWithAllDefaults(t *testing.T) {
 	SetDefaults(cfg)
 
 	// Check all defaults
-	if cfg.BatchSize != 500 {
-		t.Errorf("Expected default batch_size 500, got %d", cfg.BatchSize)
+	// BatchSize: default is 0 (whole file mode)
+	if cfg.BatchSize != 0 {
+		t.Errorf("Expected default batch_size 0 (whole file mode), got %d", cfg.BatchSize)
 	}
 
 	if cfg.RemainderThreshold != 0.2 {
