@@ -38,8 +38,11 @@ func discoverFilesInDirectory(basePath string) ([]string, error) {
 			return nil
 		}
 
-		// Only include .ndjson files
-		if strings.HasSuffix(strings.ToLower(info.Name()), ".ndjson") {
+		// Include .ndjson and .ndjson.gz files (.gz is also accepted)
+		lowerName := strings.ToLower(info.Name())
+		if strings.HasSuffix(lowerName, ".ndjson") || 
+		   strings.HasSuffix(lowerName, ".ndjson.gz") ||
+		   strings.HasSuffix(lowerName, ".gz") {
 			// Make path relative to basePath
 			relPath, err := filepath.Rel(basePath, path)
 			if err != nil {
@@ -56,7 +59,7 @@ func discoverFilesInDirectory(basePath string) ([]string, error) {
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no .ndjson files found in %s", basePath)
+		return nil, fmt.Errorf("no .ndjson or .gz files found in %s", basePath)
 	}
 
 	return files, nil

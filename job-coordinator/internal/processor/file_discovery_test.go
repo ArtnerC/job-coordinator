@@ -101,7 +101,7 @@ func TestDiscoverFiles(t *testing.T) {
 			},
 			wantFileCount: 0,
 			wantErr:       true,
-			errMsg:        "no .ndjson files found",
+			errMsg:        "no .ndjson or .gz files found",
 		},
 		{
 			name: "directory with mixed file types (only .ndjson)",
