@@ -307,8 +307,11 @@ func (d *PubSubDistributor) waitForJobCompletion(jobID string) error {
 func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *pubsub.Subscription) error {
 	startTime := time.Now()
 	checkCount := 0
+	consecutiveEmptyChecks := 0
+	requiredEmptyChecks := 2 // Require 2 consecutive empty checks to ensure stability
 	
-	log.Printf("Polling subscription every %v (timeout: %v)", d.pollInterval, d.completionTimeout)
+	log.Printf("Polling subscription every %v (timeout: %v, requires %d consecutive empty checks)", 
+		d.pollInterval, d.completionTimeout, requiredEmptyChecks)
 	
 	for {
 		checkCount++
@@ -324,12 +327,21 @@ func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *p
 		if err != nil {
 			log.Printf("Warning: error checking subscription %s (check #%d): %v", sub.ID(), checkCount, err)
 			// Continue checking despite error
+			consecutiveEmptyChecks = 0 // Reset counter on error
 		} else if hasMessages {
 			log.Printf("Subscription %s still has messages (check #%d, elapsed: %v)", sub.ID(), checkCount, elapsed.Round(time.Second))
+			consecutiveEmptyChecks = 0 // Reset counter when messages found
 		} else {
 			// No messages found
-			log.Printf("Subscription %s drained after %v (%d checks)", sub.ID(), elapsed.Round(time.Second), checkCount)
-			return nil
+			consecutiveEmptyChecks++
+			log.Printf("Subscription %s appears empty (check #%d, consecutive empty: %d/%d, elapsed: %v)", 
+				sub.ID(), checkCount, consecutiveEmptyChecks, requiredEmptyChecks, elapsed.Round(time.Second))
+			
+			if consecutiveEmptyChecks >= requiredEmptyChecks {
+				log.Printf("Subscription %s confirmed drained after %v (%d checks, %d consecutive empty)", 
+					sub.ID(), elapsed.Round(time.Second), checkCount, consecutiveEmptyChecks)
+				return nil
+			}
 		}
 		
 		// Wait before next poll (regular interval, not exponential)
@@ -337,12 +349,22 @@ func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *p
 	}
 }
 
-// subscriptionHasMessages checks if a subscription has any messages by pulling with immediate timeout
+// subscriptionHasMessages checks if a subscription has any unprocessed messages
+// This includes both undelivered messages AND messages currently being processed (unacknowledged)
 func (d *PubSubDistributor) subscriptionHasMessages(ctx context.Context, sub *pubsub.Subscription) (bool, error) {
+	// The Pub/Sub client library doesn't provide a direct way to check message counts
+	// We use a pull-based approach with Receive() to check for deliverable messages
+	// To ensure we catch in-flight messages, we use consecutive empty checks in the caller
+	return d.subscriptionHasMessagesViaReceive(ctx, sub)
+}
+
+// subscriptionHasMessagesViaReceive checks for messages by attempting to pull one
+func (d *PubSubDistributor) subscriptionHasMessagesViaReceive(ctx context.Context, sub *pubsub.Subscription) (bool, error) {
 	hasMessages := false
 	
-	// Try to pull one message with very short timeout
-	pullCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	// Try to pull one message with a reasonable timeout
+	// Using 2 seconds to account for network latency
+	pullCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	
 	// Use a channel to track if we received anything
