@@ -8,14 +8,16 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
+	pubsubpb "cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/dqme/job-coordinator/internal/models"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // PubSubDistributor publishes work units to Google Cloud Pub/Sub
 type PubSubDistributor struct {
 	client               *pubsub.Client
-	topic                *pubsub.Topic
+	publisher            *pubsub.Publisher
 	projectID            string
 	topicName            string
 	batchSize            int
@@ -27,7 +29,8 @@ type PubSubDistributor struct {
 	publishErrs          []error
 	distributedCount     int                    // Count of work units successfully distributed
 	jobID                string                 // Single job ID for this distributor instance
-	monitorSubscription  *pubsub.Subscription   // Single monitoring subscription
+	monitorSubscriber    *pubsub.Subscriber     // Single monitoring subscriber
+	monitorSubName       string                 // Monitoring subscription name
 }
 
 // PubSubConfig holds configuration for Pub/Sub distributor
@@ -68,22 +71,22 @@ func NewPubSubDistributor(ctx context.Context, config PubSubConfig) (*PubSubDist
 		return nil, fmt.Errorf("failed to create pubsub client: %w", err)
 	}
 
-	topic := client.Topic(config.TopicName)
-	
-	// Verify topic exists
-	exists, err := topic.Exists(ctx)
+	// Verify topic exists using TopicAdminClient
+	topicPath := fmt.Sprintf("projects/%s/topics/%s", config.ProjectID, config.TopicName)
+	_, err = client.TopicAdminClient.GetTopic(ctx, &pubsubpb.GetTopicRequest{
+		Topic: topicPath,
+	})
 	if err != nil {
 		client.Close()
-		return nil, fmt.Errorf("failed to check if topic exists: %w", err)
+		return nil, fmt.Errorf("topic %s does not exist in project %s: %w", config.TopicName, config.ProjectID, err)
 	}
-	if !exists {
-		client.Close()
-		return nil, fmt.Errorf("topic %s does not exist in project %s", config.TopicName, config.ProjectID)
-	}
+
+	// Create publisher for the topic
+	publisher := client.Publisher(topicPath)
 
 	return &PubSubDistributor{
 		client:            client,
-		topic:             topic,
+		publisher:         publisher,
 		projectID:         config.ProjectID,
 		topicName:         config.TopicName,
 		batchSize:         config.BatchSize,
@@ -152,7 +155,7 @@ func (d *PubSubDistributor) flushBatch() error {
 
 	// Publish all messages in batch
 	for i, msg := range d.batch {
-		results[i] = d.topic.Publish(ctx, msg)
+		results[i] = d.publisher.Publish(ctx, msg)
 	}
 
 	// Wait for all publishes to complete
@@ -204,14 +207,14 @@ func (d *PubSubDistributor) Close() error {
 	// Flush any remaining messages
 	if err := d.flushBatch(); err != nil {
 		// Still close client even if flush fails
-		d.topic.Stop()
+		d.publisher.Stop()
 		d.client.Close()
 		d.client = nil
 		return err
 	}
 
-	// Stop topic and close client
-	d.topic.Stop()
+	// Stop publisher and close client
+	d.publisher.Stop()
 	err := d.client.Close()
 	d.client = nil
 	return err
@@ -268,43 +271,54 @@ func (d *PubSubDistributor) waitForJobCompletion(jobID string) error {
 	log.Printf("Waiting for job %s to complete processing in pubsub...", jobID)
 	
 	// Create temporary subscription with filter for this job ID
-	subID := fmt.Sprintf("monitor-%s-%d", jobID, time.Now().Unix())
-	subConfig := pubsub.SubscriptionConfig{
-		Topic:  d.topic,
+	subName := fmt.Sprintf("monitor-%s-%d", jobID, time.Now().Unix())
+	topicPath := fmt.Sprintf("projects/%s/topics/%s", d.projectID, d.topicName)
+	subPath := fmt.Sprintf("projects/%s/subscriptions/%s", d.projectID, subName)
+	
+	subConfig := &pubsubpb.Subscription{
+		Name:   subPath,
+		Topic:  topicPath,
 		Filter: fmt.Sprintf(`attributes.job_id = "%s"`, jobID),
-		// Retention for monitoring - keep messages long enough to track completion
-		RetentionDuration: d.subscriptionTTL,
-		// Expire subscription automatically
-		ExpirationPolicy: d.subscriptionTTL,
+		// Set retention and expiration
+		MessageRetentionDuration: durationpb.New(d.subscriptionTTL),
+		ExpirationPolicy: &pubsubpb.ExpirationPolicy{
+			Ttl: durationpb.New(d.subscriptionTTL),
+		},
 	}
 	
-	sub, err := d.client.CreateSubscription(ctx, subID, subConfig)
+	_, err := d.client.SubscriptionAdminClient.CreateSubscription(ctx, subConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring subscription for job %s: %w", jobID, err)
 	}
 	
-	// Store subscription for cleanup
+	// Store subscription name for cleanup
 	d.mu.Lock()
-	d.monitorSubscription = sub
+	d.monitorSubName = subName
 	d.mu.Unlock()
 	
-	log.Printf("Created monitoring subscription %s for job %s (TTL: %v)", subID, jobID, d.subscriptionTTL)
+	log.Printf("Created monitoring subscription %s for job %s (TTL: %v)", subName, jobID, d.subscriptionTTL)
 	
 	// Clean up subscription when done
 	defer func() {
-		if err := sub.Delete(ctx); err != nil {
-			log.Printf("Warning: failed to delete monitoring subscription %s: %v", sub.ID(), err)
+		deleteReq := &pubsubpb.DeleteSubscriptionRequest{
+			Subscription: subPath,
+		}
+		if err := d.client.SubscriptionAdminClient.DeleteSubscription(ctx, deleteReq); err != nil {
+			log.Printf("Warning: failed to delete monitoring subscription %s: %v", subName, err)
 		} else {
-			log.Printf("Deleted monitoring subscription %s", sub.ID())
+			log.Printf("Deleted monitoring subscription %s", subName)
 		}
 	}()
 	
+	// Create subscriber for monitoring
+	subscriber := d.client.Subscriber(subPath)
+	
 	// Wait for subscription to drain with regular polling
-	return d.waitForSubscriptionDrain(ctx, sub)
+	return d.waitForSubscriptionDrain(ctx, subscriber, subPath)
 }
 
 // waitForSubscriptionDrain polls subscription at regular intervals until it has no undelivered messages
-func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *pubsub.Subscription) error {
+func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, subscriber *pubsub.Subscriber, subPath string) error {
 	startTime := time.Now()
 	checkCount := 0
 	consecutiveEmptyChecks := 0
@@ -323,23 +337,23 @@ func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *p
 		}
 		
 		// Check if subscription has any messages
-		hasMessages, err := d.subscriptionHasMessages(ctx, sub)
+		hasMessages, err := d.subscriptionHasMessages(ctx, subscriber)
 		if err != nil {
-			log.Printf("Warning: error checking subscription %s (check #%d): %v", sub.ID(), checkCount, err)
+			log.Printf("Warning: error checking subscription %s (check #%d): %v", subPath, checkCount, err)
 			// Continue checking despite error
 			consecutiveEmptyChecks = 0 // Reset counter on error
 		} else if hasMessages {
-			log.Printf("Subscription %s still has messages (check #%d, elapsed: %v)", sub.ID(), checkCount, elapsed.Round(time.Second))
+			log.Printf("Subscription %s still has messages (check #%d, elapsed: %v)", subPath, checkCount, elapsed.Round(time.Second))
 			consecutiveEmptyChecks = 0 // Reset counter when messages found
 		} else {
 			// No messages found
 			consecutiveEmptyChecks++
 			log.Printf("Subscription %s appears empty (check #%d, consecutive empty: %d/%d, elapsed: %v)", 
-				sub.ID(), checkCount, consecutiveEmptyChecks, requiredEmptyChecks, elapsed.Round(time.Second))
+				subPath, checkCount, consecutiveEmptyChecks, requiredEmptyChecks, elapsed.Round(time.Second))
 			
 			if consecutiveEmptyChecks >= requiredEmptyChecks {
 				log.Printf("Subscription %s confirmed drained after %v (%d checks, %d consecutive empty)", 
-					sub.ID(), elapsed.Round(time.Second), checkCount, consecutiveEmptyChecks)
+					subPath, elapsed.Round(time.Second), checkCount, consecutiveEmptyChecks)
 				return nil
 			}
 		}
@@ -351,15 +365,15 @@ func (d *PubSubDistributor) waitForSubscriptionDrain(ctx context.Context, sub *p
 
 // subscriptionHasMessages checks if a subscription has any unprocessed messages
 // This includes both undelivered messages AND messages currently being processed (unacknowledged)
-func (d *PubSubDistributor) subscriptionHasMessages(ctx context.Context, sub *pubsub.Subscription) (bool, error) {
+func (d *PubSubDistributor) subscriptionHasMessages(ctx context.Context, subscriber *pubsub.Subscriber) (bool, error) {
 	// The Pub/Sub client library doesn't provide a direct way to check message counts
 	// We use a pull-based approach with Receive() to check for deliverable messages
 	// To ensure we catch in-flight messages, we use consecutive empty checks in the caller
-	return d.subscriptionHasMessagesViaReceive(ctx, sub)
+	return d.subscriptionHasMessagesViaReceive(ctx, subscriber)
 }
 
 // subscriptionHasMessagesViaReceive checks for messages by attempting to pull one
-func (d *PubSubDistributor) subscriptionHasMessagesViaReceive(ctx context.Context, sub *pubsub.Subscription) (bool, error) {
+func (d *PubSubDistributor) subscriptionHasMessagesViaReceive(ctx context.Context, subscriber *pubsub.Subscriber) (bool, error) {
 	hasMessages := false
 	
 	// Try to pull one message with a reasonable timeout
@@ -371,7 +385,7 @@ func (d *PubSubDistributor) subscriptionHasMessagesViaReceive(ctx context.Contex
 	receivedChan := make(chan bool, 1)
 	
 	go func() {
-		err := sub.Receive(pullCtx, func(ctx context.Context, msg *pubsub.Message) {
+		err := subscriber.Receive(pullCtx, func(ctx context.Context, msg *pubsub.Message) {
 			receivedChan <- true
 			// Nack immediately - we're just checking, not consuming
 			msg.Nack()

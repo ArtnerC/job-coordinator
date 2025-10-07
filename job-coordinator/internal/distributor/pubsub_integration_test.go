@@ -8,9 +8,52 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
+	pubsubpb "cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/dqme/job-coordinator/internal/models"
 )
+
+// ensureTopic creates a topic if it doesn't exist (helper for v2 API)
+func ensureTopic(ctx context.Context, t *testing.T, client *pubsub.Client, projectID, topicName string) string {
+	topicPath := fmt.Sprintf("projects/%s/topics/%s", projectID, topicName)
+	_, err := client.TopicAdminClient.GetTopic(ctx, &pubsubpb.GetTopicRequest{
+		Topic: topicPath,
+	})
+	if err != nil {
+		// Topic doesn't exist, create it
+		_, err = client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{
+			Name: topicPath,
+		})
+		if err != nil {
+			t.Fatalf("Failed to create topic: %v", err)
+		}
+		t.Logf("Created topic: %s", topicName)
+	} else {
+		t.Logf("Topic already exists: %s", topicName)
+	}
+	return topicPath
+}
+
+// createSubscription creates a subscription (helper for v2 API)
+func createSubscription(ctx context.Context, t *testing.T, client *pubsub.Client, projectID, subName, topicPath string) (*pubsub.Subscriber, string) {
+	subPath := fmt.Sprintf("projects/%s/subscriptions/%s", projectID, subName)
+	_, err := client.SubscriptionAdminClient.CreateSubscription(ctx, &pubsubpb.Subscription{
+		Name:  subPath,
+		Topic: topicPath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create subscription: %v", err)
+	}
+	t.Logf("Created subscription: %s", subName)
+	return client.Subscriber(subPath), subPath
+}
+
+// deleteSubscription deletes a subscription (helper for v2 API)
+func deleteSubscription(ctx context.Context, client *pubsub.Client, subPath string) error {
+	return client.SubscriptionAdminClient.DeleteSubscription(ctx, &pubsubpb.DeleteSubscriptionRequest{
+		Subscription: subPath,
+	})
+}
 
 // TestPubSubDistributor_WithEmulator tests PubSub distributor using the local emulator
 func TestPubSubDistributor_WithEmulator(t *testing.T) {
@@ -34,15 +77,16 @@ func TestPubSubDistributor_WithEmulator(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Get or create topic
-	topic := client.Topic(topicName)
-	exists, err := topic.Exists(ctx)
+	// Get or create topic using TopicAdminClient
+	topicPath := fmt.Sprintf("projects/%s/topics/%s", projectID, topicName)
+	_, err = client.TopicAdminClient.GetTopic(ctx, &pubsubpb.GetTopicRequest{
+		Topic: topicPath,
+	})
 	if err != nil {
-		t.Fatalf("Failed to check if topic exists: %v", err)
-	}
-	
-	if !exists {
-		topic, err = client.CreateTopic(ctx, topicName)
+		// Topic doesn't exist, create it
+		_, err = client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{
+			Name: topicPath,
+		})
 		if err != nil {
 			t.Fatalf("Failed to create topic: %v", err)
 		}
@@ -53,13 +97,18 @@ func TestPubSubDistributor_WithEmulator(t *testing.T) {
 
 	// Create a unique subscription for this test run (to avoid old messages)
 	subName := fmt.Sprintf("test-sub-%d", time.Now().UnixNano())
-	sub, err := client.CreateSubscription(ctx, subName, pubsub.SubscriptionConfig{
-		Topic: topic,
+	subPath := fmt.Sprintf("projects/%s/subscriptions/%s", projectID, subName)
+	_, err = client.SubscriptionAdminClient.CreateSubscription(ctx, &pubsubpb.Subscription{
+		Name:  subPath,
+		Topic: topicPath,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create subscription: %v", err)
 	}
 	t.Logf("Created subscription: %s", subName)
+	
+	// Create subscriber for receiving messages
+	sub := client.Subscriber(subPath)
 
 	// Create distributor
 	config := PubSubConfig{
@@ -241,18 +290,7 @@ func TestPubSubDistributor_CreateWithEmulator(t *testing.T) {
 	defer client.Close()
 
 	// Get or create topic
-	topic := client.Topic(config.TopicName)
-	exists, err := topic.Exists(ctx)
-	if err != nil {
-		t.Fatalf("Failed to check if topic exists: %v", err)
-	}
-	
-	if !exists {
-		_, err = client.CreateTopic(ctx, config.TopicName)
-		if err != nil {
-			t.Fatalf("Failed to create topic: %v", err)
-		}
-	}
+	ensureTopic(ctx, t, client, config.ProjectID, config.TopicName)
 
 	// Now create distributor
 	dist, err := NewPubSubDistributor(ctx, config)
@@ -329,18 +367,7 @@ func TestPubSubDistributor_BatchPublishing(t *testing.T) {
 	defer client.Close()
 
 	// Get or create topic
-	topic := client.Topic(topicName)
-	exists, err := topic.Exists(ctx)
-	if err != nil {
-		t.Fatalf("Failed to check if topic exists: %v", err)
-	}
-	
-	if !exists {
-		_, err = client.CreateTopic(ctx, topicName)
-		if err != nil {
-			t.Fatalf("Failed to create topic: %v", err)
-		}
-	}
+	ensureTopic(ctx, t, client, projectID, topicName)
 
 	// Create distributor with small batch size
 	config := PubSubConfig{
@@ -396,29 +423,12 @@ func TestPubSubDistributor_CompletionMonitoring(t *testing.T) {
 	defer client.Close()
 
 	// Get or create topic
-	topic := client.Topic(topicName)
-	exists, err := topic.Exists(ctx)
-	if err != nil {
-		t.Fatalf("Failed to check if topic exists: %v", err)
-	}
-	
-	if !exists {
-		topic, err = client.CreateTopic(ctx, topicName)
-		if err != nil {
-			t.Fatalf("Failed to create topic: %v", err)
-		}
-		t.Logf("Created topic: %s", topicName)
-	}
+	topicPath := ensureTopic(ctx, t, client, projectID, topicName)
 
 	// Create a consumer subscription (simulates worker consuming messages)
 	consumerSubName := fmt.Sprintf("consumer-sub-%d", time.Now().UnixNano())
-	consumerSub, err := client.CreateSubscription(ctx, consumerSubName, pubsub.SubscriptionConfig{
-		Topic: topic,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create consumer subscription: %v", err)
-	}
-	defer consumerSub.Delete(ctx)
+	consumerSub, consumerSubPath := createSubscription(ctx, t, client, projectID, consumerSubName, topicPath)
+	defer deleteSubscription(ctx, client, consumerSubPath)
 	t.Logf("Created consumer subscription: %s", consumerSubName)
 
 	// Create distributor with short timeouts for testing
