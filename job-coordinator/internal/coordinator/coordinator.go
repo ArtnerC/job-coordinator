@@ -347,19 +347,19 @@ func (c *Coordinator) processFiles(files []string, measures []string) error {
 
 // processFile processes a single FHIR bundle file: counts lines, splits batches, creates work units.
 func (c *Coordinator) processFile(file string, measures []string) error {
+	// Handle batch_size=0 (whole file mode) - skip line counting
+	if c.cfg.BatchSize == 0 {
+		return c.distributeWholeFile(file, measures)
+	}
+
 	// Construct full path from base path + relative file path
 	fullPath := joinPath(c.cfg.BasePath, file)
 	
-	// Count lines in the file
+	// Count lines in the file (only needed for batching mode)
 	lineCount, err := processor.CountLines(fullPath)
 	if err != nil {
 		c.incrementErrorCount()
 		return fmt.Errorf("failed to count lines: %w", err)
-	}
-
-	// Handle batch_size=0 (whole file mode)
-	if c.cfg.BatchSize == 0 {
-		return c.distributeWholeFile(file, measures)
 	}
 
 	// Split file into batches
