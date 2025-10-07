@@ -352,6 +352,7 @@ func (c *Coordinator) distributeWholeFile(file string, measures []string) error 
 	}
 
 	c.incrementTotalWorkUnits()
+	c.incrementProcessedCount()
 	return nil
 }
 
@@ -376,6 +377,7 @@ func (c *Coordinator) distributeBatch(file string, batch processor.BatchRange, m
 	}
 
 	c.incrementTotalWorkUnits()
+	c.incrementProcessedCount()
 	return nil
 }
 
@@ -476,6 +478,12 @@ func (c *Coordinator) incrementTotalWorkUnits() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.job.TotalWorkUnits++
+}
+
+func (c *Coordinator) incrementProcessedCount() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.job.ProcessedCount++
 }
 
 func (c *Coordinator) incrementErrorCount() {
