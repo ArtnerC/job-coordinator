@@ -13,6 +13,7 @@ import (
 	"github.com/dqme/job-coordinator/internal/coordinator"
 	"github.com/dqme/job-coordinator/internal/distributor"
 	"github.com/dqme/job-coordinator/internal/models"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -22,6 +23,12 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Generate job ID if not provided
+	if cfg.JobID == "" {
+		cfg.JobID = uuid.Must(uuid.NewV7()).String()
+		log.Printf("Generated job ID: %s", cfg.JobID)
 	}
 
 	log.Printf("Configuration loaded: job_id=%s, batch_size=%d, distributor_type=%s",

@@ -21,7 +21,7 @@ type Distributor interface {
 func NewDistributor(ctx context.Context, cfg config.Config) (Distributor, error) {
 	switch cfg.DistributorType {
 	case "stdout":
-		return NewStdoutDistributor(), nil
+		return NewStdoutDistributorWithConfig(nil, cfg.DistributorConfig), nil
 		
 	case "file":
 		outputPath := cfg.DistributorConfig["output_path"]

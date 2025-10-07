@@ -43,12 +43,11 @@ type JobConfig struct {
 	MeasuresPath             string            `json:"measures_path"`
 	MeasuresToRun            []string          `json:"measures_to_run,omitempty"`
 	MeasuresManifestPath     *string           `json:"measures_manifest_path,omitempty"`
-	UseMeasuresPath          bool              `json:"use_measures_path"`
 	DistributorType          string            `json:"distributor_type"`
 	DistributorConfig        map[string]string `json:"distributor_config,omitempty"`
 	CompletionTTL            time.Duration     `json:"completion_ttl"`
 	ConcurrentFileProcessors int               `json:"concurrent_file_processors"`
-	ScaleTestCount           *int              `json:"scale_test_count,omitempty"`
+	ScaleLoad                *int              `json:"scale_load,omitempty"`
 }
 
 // IsValidTransition checks if a state transition is valid

@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dqme/job-coordinator/internal/config"
 	"github.com/dqme/job-coordinator/internal/distributor"
 	"github.com/dqme/job-coordinator/internal/models"
 	"github.com/dqme/job-coordinator/internal/processor"
+	"github.com/google/uuid"
 )
 
 // Coordinator orchestrates the processing of a job, managing file discovery,
@@ -93,12 +93,14 @@ func (c *Coordinator) ProcessJob() error {
 		return fmt.Errorf("measure discovery failed: %w", err)
 	}
 
-	// Check if scale test mode is enabled
-	if c.cfg.ScaleTestCount != nil && *c.cfg.ScaleTestCount > 0 {
-		// Scale test mode: process specified number of lines
-		if err := c.processScaleTest(files, measures, *c.cfg.ScaleTestCount); err != nil {
+	// Check if scale load mode is enabled
+	if c.cfg.ScaleLoad != nil && *c.cfg.ScaleLoad > 0 {
+		log.Printf("⚠️  WARNING: Scale load mode enabled - synthesizing %d work units for load testing", *c.cfg.ScaleLoad)
+		log.Printf("⚠️  WARNING: This mode is for testing/benchmarking only and will cycle through file patterns")
+		// Scale load mode: synthesize specified number of work units
+		if err := c.processScaleLoad(files, measures, *c.cfg.ScaleLoad); err != nil {
 			c.updateJobStatus(models.JobStatusFailed)
-			return fmt.Errorf("scale test processing failed: %w", err)
+			return fmt.Errorf("scale load processing failed: %w", err)
 		}
 	} else {
 		// Normal mode: process all files
@@ -128,13 +130,13 @@ func (c *Coordinator) discoverFiles() ([]string, error) {
 
 // discoverMeasures discovers measure definitions based on configuration.
 func (c *Coordinator) discoverMeasures() ([]string, error) {
-	// If measures_to_run is explicitly provided, use it
-	if len(c.cfg.MeasuresToRun) > 0 && !c.cfg.UseMeasuresPath {
+	// If measures_to_run is explicitly provided, use it (optional)
+	if len(c.cfg.MeasuresToRun) > 0 {
 		return c.cfg.MeasuresToRun, nil
 	}
 
-	// If use_measures_path=true, load from measures manifest
-	if c.cfg.UseMeasuresPath && c.cfg.MeasuresManifestPath != nil && *c.cfg.MeasuresManifestPath != "" {
+	// If measures manifest is provided, load from it
+	if c.cfg.MeasuresManifestPath != nil && *c.cfg.MeasuresManifestPath != "" {
 		measures, err := processor.DiscoverMeasures(*c.cfg.MeasuresManifestPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load measures manifest: %w", err)
@@ -142,7 +144,7 @@ func (c *Coordinator) discoverMeasures() ([]string, error) {
 		return measures, nil
 	}
 
-	// If measures_path is provided, auto-discover measures
+	// Auto-discover measures from measures_path (default: ./measures)
 	if c.cfg.MeasuresPath != "" {
 		return c.discoverMeasureFiles(c.cfg.MeasuresPath)
 	}
@@ -168,10 +170,10 @@ func (c *Coordinator) discoverMeasureFiles(dir string) ([]string, error) {
 	return measures, nil
 }
 
-// processScaleTest processes files in scale test mode where we want to generate
-// a specific number of total lines worth of work units. It cycles through the actual
-// file's batch pattern repeatedly until reaching the target line count.
-func (c *Coordinator) processScaleTest(files []string, measures []string, targetLineCount int) error {
+// processScaleLoad processes files in scale load mode where we want to generate
+// a specific number of total work units for load testing. It cycles through the actual
+// file's batch pattern repeatedly until reaching the target count.
+func (c *Coordinator) processScaleLoad(files []string, measures []string, targetLineCount int) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files available for scale test")
 	}
@@ -357,8 +359,9 @@ func (c *Coordinator) distributeBatch(file string, batch processor.BatchRange, m
 }
 
 // buildMeasuresPath constructs the measures_path field for work units.
+// It returns the MeasuresPath as a relative path that work units can use.
 func (c *Coordinator) buildMeasuresPath(measures []string) *string {
-	if c.cfg.UseMeasuresPath && c.cfg.MeasuresPath != "" {
+	if c.cfg.MeasuresPath != "" {
 		return &c.cfg.MeasuresPath
 	}
 	return nil
@@ -460,8 +463,7 @@ func (c *Coordinator) incrementErrorCount() {
 	c.job.ErrorCount++
 }
 
-// generateWorkUnitID generates a unique work unit ID
+// generateWorkUnitID generates a unique work unit ID using UUID v7
 func generateWorkUnitID() string {
-	// Simple ID generation - can be enhanced with UUID library
-	return fmt.Sprintf("wu-%d", time.Now().UnixNano())
+	return uuid.Must(uuid.NewV7()).String()
 }

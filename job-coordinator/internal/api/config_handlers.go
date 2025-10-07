@@ -37,7 +37,6 @@ func (h *Handler) GetConfigHandler(w http.ResponseWriter, r *http.Request) {
 		MeasuresPath:             cfg.MeasuresPath,
 		MeasuresToRun:            cfg.MeasuresToRun,
 		MeasuresManifestPath:     measuresManifestPath,
-		UseMeasuresPath:          cfg.UseMeasuresPath,
 		DistributorType:          cfg.DistributorType,
 		CompletionTTL:            cfg.CompletionTTL.String(),
 		ConcurrentFileProcessors: cfg.ConcurrentFileProcessors,

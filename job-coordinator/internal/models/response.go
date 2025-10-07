@@ -29,10 +29,9 @@ type ConfigResponse struct {
 	RemainderThreshold       float64  `json:"remainder_threshold"`
 	BasePath                 string   `json:"base_path"`
 	ManifestPath             string   `json:"manifest_path,omitempty"`
-	MeasuresPath             string   `json:"measures_path,omitempty"`
+	MeasuresPath             string   `json:"measures_path"`
 	MeasuresToRun            []string `json:"measures_to_run,omitempty"`
 	MeasuresManifestPath     string   `json:"measures_manifest_path,omitempty"`
-	UseMeasuresPath          bool     `json:"use_measures_path"`
 	DistributorType          string   `json:"distributor_type"`
 	CompletionTTL            string   `json:"completion_ttl"`
 	ConcurrentFileProcessors int      `json:"concurrent_file_processors"`

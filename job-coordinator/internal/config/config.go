@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -20,12 +19,11 @@ type Config struct {
 	MeasuresPath             string
 	MeasuresToRun            []string
 	MeasuresManifestPath     *string
-	UseMeasuresPath          bool
 	DistributorType          string
 	DistributorConfig        map[string]string
 	CompletionTTL            time.Duration
 	ConcurrentFileProcessors int
-	ScaleTestCount           *int
+	ScaleLoad                *int
 	APIPort                  int
 }
 
@@ -41,11 +39,6 @@ func ValidateConfig(cfg *Config) error {
 		return errors.New("remainder_threshold must be between 0.0 and 1.0")
 	}
 
-	// Validate base_path is absolute
-	if !filepath.IsAbs(cfg.BasePath) {
-		return errors.New("base_path must be absolute")
-	}
-
 	// Validate distributor_type
 	validDistributors := map[string]bool{
 		"pubsub": true,
@@ -59,11 +52,6 @@ func ValidateConfig(cfg *Config) error {
 	// Validate concurrent_file_processors
 	if cfg.ConcurrentFileProcessors <= 0 {
 		return errors.New("concurrent_file_processors must be > 0")
-	}
-
-	// Validate measures configuration
-	if !cfg.UseMeasuresPath && len(cfg.MeasuresToRun) == 0 {
-		return errors.New("measures_to_run must be provided when use_measures_path is false")
 	}
 
 	return nil
@@ -91,6 +79,9 @@ func SetDefaults(cfg *Config) {
 	}
 	if cfg.DistributorConfig == nil {
 		cfg.DistributorConfig = make(map[string]string)
+	}
+	if cfg.MeasuresPath == "" {
+		cfg.MeasuresPath = "./measures"
 	}
 }
 
@@ -120,7 +111,6 @@ func IsRuntimeModifiable(field string, status string) bool {
 	preStartOnly := map[string]bool{
 		"distributor_type":          true,
 		"distributor_config":        true,
-		"use_measures_path":         true,
 		"measures_to_run":           true,
 	}
 
@@ -148,15 +138,14 @@ func LoadConfig() (*Config, error) {
 		pflag.Float64("remainder-threshold", 0.2, "Threshold for appending remainder to last batch (0.0-1.0)")
 		pflag.String("base-path", "", "Base directory containing patient bundle files (required)")
 		pflag.String("manifest-path", "", "Path to file manifest (optional, auto-discovers if not provided)")
-		pflag.String("measures-path", "", "Directory containing measure definition files")
-		pflag.StringSlice("measures-to-run", []string{}, "Specific measure paths to include")
+		pflag.String("measures-path", "./measures", "Directory containing measure definition files")
+		pflag.StringSlice("measures-to-run", []string{}, "Specific measure paths to include (optional)")
 		pflag.String("measures-manifest-path", "", "Path to measures manifest file")
-		pflag.Bool("use-measures-path", false, "Include measures_path in work units instead of measures array")
 		pflag.String("distributor-type", "stdout", "Distributor type: pubsub, stdout, or file")
-		pflag.StringToString("distributor-config", map[string]string{}, "Distributor-specific configuration (key=value pairs)")
+		pflag.StringToString("distributor-config", map[string]string{}, "Distributor-specific configuration (key=value pairs). For stdout: delay_ms=<milliseconds> to slow output for demos/testing")
 		pflag.Duration("completion-ttl", 10*time.Minute, "Time to keep running after job completion")
 		pflag.Int("concurrent-file-processors", 10, "Number of files to process concurrently")
-		pflag.Int("scale-test-count", 0, "Generate N synthetic work units for scale testing (0 to disable)")
+		pflag.Int("scale-load", 0, "Synthesize load by generating N work units from file patterns (0 to disable)")
 		pflag.Int("api-port", 8080, "Port for REST API server")
 		flagsInitialized = true
 	}
@@ -177,7 +166,6 @@ func LoadConfig() (*Config, error) {
 		BasePath:                 v.GetString("base-path"),
 		MeasuresPath:             v.GetString("measures-path"),
 		MeasuresToRun:            v.GetStringSlice("measures-to-run"),
-		UseMeasuresPath:          v.GetBool("use-measures-path"),
 		DistributorType:          v.GetString("distributor-type"),
 		DistributorConfig:        v.GetStringMapString("distributor-config"),
 		CompletionTTL:            v.GetDuration("completion-ttl"),
@@ -192,8 +180,8 @@ func LoadConfig() (*Config, error) {
 	if measuresManifestPath := v.GetString("measures-manifest-path"); measuresManifestPath != "" {
 		cfg.MeasuresManifestPath = &measuresManifestPath
 	}
-	if scaleTestCount := v.GetInt("scale-test-count"); scaleTestCount > 0 {
-		cfg.ScaleTestCount = &scaleTestCount
+	if scaleLoad := v.GetInt("scale-load"); scaleLoad > 0 {
+		cfg.ScaleLoad = &scaleLoad
 	}
 
 	// Set defaults for unset values
