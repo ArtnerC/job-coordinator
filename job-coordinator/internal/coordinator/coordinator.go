@@ -55,6 +55,13 @@ func (c *Coordinator) GetConfig() *config.Config {
 	return c.cfg
 }
 
+// GetDistributor returns the distributor (thread-safe).
+func (c *Coordinator) GetDistributor() distributor.Distributor {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.distributor
+}
+
 // UpdateConfig updates runtime-modifiable config fields.
 func (c *Coordinator) UpdateConfig(newCfg *config.Config) error {
 	c.mu.Lock()
@@ -108,6 +115,20 @@ func (c *Coordinator) ProcessJob() error {
 			c.updateJobStatus(models.JobStatusFailed)
 			return fmt.Errorf("file processing failed: %w", err)
 		}
+	}
+
+	// Wait for distributor to complete before marking job as completed
+	log.Printf("Waiting for distributor to complete...")
+	if err := c.distributor.WaitForCompletion(); err != nil {
+		log.Printf("Warning: distributor completion wait failed: %v", err)
+	}
+	
+	// Verify distributor is complete
+	status := c.distributor.GetStatus()
+	if !status.IsComplete {
+		log.Printf("Warning: distributor reports not complete after WaitForCompletion (pending: %d)", status.PendingCount)
+	} else {
+		log.Printf("Distributor complete: distributed %d work units", status.DistributedCount)
 	}
 
 	// Mark job as completed

@@ -11,9 +11,10 @@ import (
 
 // FileDistributor writes work units as NDJSON to a file
 type FileDistributor struct {
-	outputPath string
-	file       *os.File
-	mu         sync.Mutex
+	outputPath       string
+	file             *os.File
+	mu               sync.Mutex
+	distributedCount int // Count of work units distributed
 }
 
 // NewFileDistributor creates a new file distributor
@@ -55,6 +56,7 @@ func (d *FileDistributor) Distribute(workUnit models.WorkUnit) error {
 		return fmt.Errorf("failed to write to file: %w", err)
 	}
 
+	d.distributedCount++
 	return nil
 }
 
@@ -70,4 +72,30 @@ func (d *FileDistributor) Close() error {
 	err := d.file.Close()
 	d.file = nil
 	return err
+}
+
+// GetStatus returns the current status of the file distributor
+func (d *FileDistributor) GetStatus() DistributorStatus {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return DistributorStatus{
+		Type:             "file",
+		IsComplete:       true, // File writes are synchronous
+		PendingCount:     0,
+		DistributedCount: d.distributedCount,
+	}
+}
+
+// WaitForCompletion ensures file is written and synced to disk
+func (d *FileDistributor) WaitForCompletion() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.file == nil {
+		return nil
+	}
+
+	// Sync file to disk to ensure all writes are persisted
+	return d.file.Sync()
 }

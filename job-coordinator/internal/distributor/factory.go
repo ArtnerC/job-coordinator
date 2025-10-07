@@ -3,10 +3,19 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/dqme/job-coordinator/internal/config"
 	"github.com/dqme/job-coordinator/internal/models"
 )
+
+// DistributorStatus represents the completion status of a distributor
+type DistributorStatus struct {
+	Type             string `json:"type"`              // Type of distributor (stdout, file, pubsub)
+	IsComplete       bool   `json:"is_complete"`       // True if all work has been distributed and flushed
+	PendingCount     int    `json:"pending_count"`     // Number of items pending distribution
+	DistributedCount int    `json:"distributed_count"` // Total number of items distributed
+}
 
 // Distributor is the interface that all distributors must implement
 type Distributor interface {
@@ -15,6 +24,15 @@ type Distributor interface {
 	
 	// Close closes the distributor and releases any resources
 	Close() error
+	
+	// GetStatus returns the current status of the distributor
+	GetStatus() DistributorStatus
+	
+	// WaitForCompletion blocks until all pending work has been distributed
+	// For stdout: ensures all output is flushed
+	// For file: ensures file is written and synced
+	// For pubsub: ensures queue backlog is empty
+	WaitForCompletion() error
 }
 
 // NewDistributor creates a distributor based on the configuration
@@ -45,6 +63,27 @@ func NewDistributor(ctx context.Context, cfg config.Config) (Distributor, error)
 			ProjectID: projectID,
 			TopicName: topicName,
 			BatchSize: 100, // Default batch size
+		}
+		
+		// Optional: completion_timeout (e.g., "2h", "30m")
+		if timeoutStr := cfg.DistributorConfig["completion_timeout"]; timeoutStr != "" {
+			if timeout, err := time.ParseDuration(timeoutStr); err == nil {
+				pubsubConfig.CompletionTimeout = timeout
+			}
+		}
+		
+		// Optional: poll_interval (e.g., "5s", "10s")
+		if intervalStr := cfg.DistributorConfig["poll_interval"]; intervalStr != "" {
+			if interval, err := time.ParseDuration(intervalStr); err == nil {
+				pubsubConfig.PollInterval = interval
+			}
+		}
+		
+		// Optional: subscription_ttl (e.g., "24h", "48h")
+		if ttlStr := cfg.DistributorConfig["subscription_ttl"]; ttlStr != "" {
+			if ttl, err := time.ParseDuration(ttlStr); err == nil {
+				pubsubConfig.SubscriptionTTL = ttl
+			}
 		}
 		
 		return NewPubSubDistributor(ctx, pubsubConfig)

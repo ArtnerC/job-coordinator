@@ -115,6 +115,18 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		completionPercent = float64(job.ProcessedCount) / float64(job.TotalWorkUnits) * 100
 	}
 
+	// Get distributor status
+	dist := h.coord.GetDistributor()
+	distStatus := dist.GetStatus()
+	
+	// Convert distributor.DistributorStatus to models.DistributorStatus
+	modelDistStatus := models.DistributorStatus{
+		Type:             distStatus.Type,
+		IsComplete:       distStatus.IsComplete,
+		PendingCount:     distStatus.PendingCount,
+		DistributedCount: distStatus.DistributedCount,
+	}
+
 	response := models.JobStatusResponse{
 		JobID:              job.ID,
 		Status:             string(job.Status),
@@ -125,6 +137,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		StartTime:          job.StartTime,
 		EndTime:            job.EndTime,
 		Errors:             job.Errors,
+		DistributorStatus:  &modelDistStatus,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -8,18 +8,27 @@ type CreateJobResponse struct {
 	Message string `json:"message"`
 }
 
+// DistributorStatus represents the status of the distributor
+type DistributorStatus struct {
+	Type             string `json:"type"`
+	IsComplete       bool   `json:"is_complete"`
+	PendingCount     int    `json:"pending_count"`
+	DistributedCount int    `json:"distributed_count"`
+}
+
 // JobStatusResponse represents the job status for GET /job/status
 type JobStatusResponse struct {
-	JobID               string    `json:"job_id"`
-	Status              string    `json:"status"`
-	TotalWorkUnits      int       `json:"total_work_units"`
-	ProcessedWorkUnits  int       `json:"processed_work_units"`
-	ErrorCount          int       `json:"error_count"`
-	CompletionPercent   float64   `json:"completion_percent"`
-	StartTime           *time.Time `json:"start_time,omitempty"`
-	EndTime             *time.Time `json:"end_time,omitempty"`
-	TTLRemaining        *string    `json:"ttl_remaining,omitempty"`
-	Errors              []string   `json:"errors,omitempty"`
+	JobID               string             `json:"job_id"`
+	Status              string             `json:"status"`
+	TotalWorkUnits      int                `json:"total_work_units"`
+	ProcessedWorkUnits  int                `json:"processed_work_units"`
+	ErrorCount          int                `json:"error_count"`
+	CompletionPercent   float64            `json:"completion_percent"`
+	StartTime           *time.Time         `json:"start_time,omitempty"`
+	EndTime             *time.Time         `json:"end_time,omitempty"`
+	TTLRemaining        *string            `json:"ttl_remaining,omitempty"`
+	Errors              []string           `json:"errors,omitempty"`
+	DistributorStatus   *DistributorStatus `json:"distributor_status,omitempty"`
 }
 
 // ConfigResponse represents the configuration for GET /config

@@ -13,8 +13,9 @@ import (
 
 // StdoutDistributor writes work units as NDJSON to stdout
 type StdoutDistributor struct {
-	writer    io.Writer
-	delayMs   int // Delay in milliseconds between work unit distributions
+	writer           io.Writer
+	delayMs          int // Delay in milliseconds between work unit distributions
+	distributedCount int // Count of work units distributed
 }
 
 // NewStdoutDistributor creates a new stdout distributor
@@ -71,10 +72,31 @@ func (d *StdoutDistributor) Distribute(workUnit models.WorkUnit) error {
 		return fmt.Errorf("failed to write to stdout: %w", err)
 	}
 
+	d.distributedCount++
 	return nil
 }
 
 // Close implements the Distributor interface (no-op for stdout)
 func (d *StdoutDistributor) Close() error {
+	return nil
+}
+
+// GetStatus returns the current status of the stdout distributor
+func (d *StdoutDistributor) GetStatus() DistributorStatus {
+	return DistributorStatus{
+		Type:             "stdout",
+		IsComplete:       true, // Stdout is always complete - writes are synchronous
+		PendingCount:     0,
+		DistributedCount: d.distributedCount,
+	}
+}
+
+// WaitForCompletion ensures all output is flushed (no-op for stdout as writes are synchronous)
+func (d *StdoutDistributor) WaitForCompletion() error {
+	// For stdout, writes are synchronous, so nothing to wait for
+	// If writer implements Sync(), we could call it here
+	if syncer, ok := d.writer.(interface{ Sync() error }); ok {
+		return syncer.Sync()
+	}
 	return nil
 }

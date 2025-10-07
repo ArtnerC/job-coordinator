@@ -371,3 +371,165 @@ func TestPubSubDistributor_BatchPublishing(t *testing.T) {
 
 	t.Logf("Successfully distributed %d work units with batch_size=%d", numWorkUnits, config.BatchSize)
 }
+
+// TestPubSubDistributor_CompletionMonitoring tests the WaitForCompletion functionality with emulator
+func TestPubSubDistributor_CompletionMonitoring(t *testing.T) {
+	// Check if gcloud is available
+	if _, err := exec.LookPath("gcloud"); err != nil {
+		t.Skip("gcloud not found, skipping PubSub emulator test")
+	}
+
+	// Start the emulator
+	_, cleanup := startPubSubEmulator(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID := "test-project"
+	topicName := "completion-test-topic"
+	jobID := fmt.Sprintf("completion-job-%d", time.Now().UnixNano())
+
+	// Create topic in emulator
+	client, err := pubsub.NewClient(ctx, projectID)
+	if err != nil {
+		t.Fatalf("Failed to create pubsub client: %v", err)
+	}
+	defer client.Close()
+
+	// Get or create topic
+	topic := client.Topic(topicName)
+	exists, err := topic.Exists(ctx)
+	if err != nil {
+		t.Fatalf("Failed to check if topic exists: %v", err)
+	}
+	
+	if !exists {
+		topic, err = client.CreateTopic(ctx, topicName)
+		if err != nil {
+			t.Fatalf("Failed to create topic: %v", err)
+		}
+		t.Logf("Created topic: %s", topicName)
+	}
+
+	// Create a consumer subscription (simulates worker consuming messages)
+	consumerSubName := fmt.Sprintf("consumer-sub-%d", time.Now().UnixNano())
+	consumerSub, err := client.CreateSubscription(ctx, consumerSubName, pubsub.SubscriptionConfig{
+		Topic: topic,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create consumer subscription: %v", err)
+	}
+	defer consumerSub.Delete(ctx)
+	t.Logf("Created consumer subscription: %s", consumerSubName)
+
+	// Create distributor with short timeouts for testing
+	config := PubSubConfig{
+		ProjectID:         projectID,
+		TopicName:         topicName,
+		BatchSize:         5,
+		CompletionTimeout: 2 * time.Minute,
+		PollInterval:      1 * time.Second,
+		SubscriptionTTL:   10 * time.Minute,
+	}
+
+	dist, err := NewPubSubDistributor(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create PubSub distributor: %v", err)
+	}
+	defer dist.Close()
+
+	// Distribute work units
+	numWorkUnits := 15
+	for i := 0; i < numWorkUnits; i++ {
+		wu := createTestWorkUnit(
+			fmt.Sprintf("wu-%03d", i),
+			jobID,
+			fmt.Sprintf("data/file%d.ndjson", i),
+		)
+		
+		if err := dist.Distribute(wu); err != nil {
+			t.Fatalf("Failed to distribute work unit %d: %v", i, err)
+		}
+	}
+	t.Logf("Distributed %d work units for job %s", numWorkUnits, jobID)
+
+	// Start a goroutine to consume messages (simulating workers)
+	receivedCount := 0
+	consumeDone := make(chan bool)
+	go func() {
+		receiveCtx := context.Background()
+		err := consumerSub.Receive(receiveCtx, func(ctx context.Context, msg *pubsub.Message) {
+			receivedCount++
+			t.Logf("Consumer received message %d (job_id: %s)", receivedCount, msg.Attributes["job_id"])
+			
+			// Simulate some processing time
+			time.Sleep(100 * time.Millisecond)
+			
+			// Ack the message
+			msg.Ack()
+			
+			if receivedCount >= numWorkUnits {
+				consumeDone <- true
+			}
+		})
+		if err != nil {
+			t.Logf("Consumer receive error: %v", err)
+		}
+	}()
+
+	// Give consumer a moment to start receiving
+	time.Sleep(500 * time.Millisecond)
+
+	// Call WaitForCompletion in a goroutine with timeout
+	completionDone := make(chan error, 1)
+	go func() {
+		t.Log("Starting WaitForCompletion...")
+		completionDone <- dist.WaitForCompletion()
+	}()
+
+	// Wait for either completion or consumer to finish
+	select {
+	case err := <-completionDone:
+		if err != nil {
+			t.Fatalf("WaitForCompletion failed: %v", err)
+		}
+		t.Log("WaitForCompletion returned successfully")
+		
+	case <-consumeDone:
+		t.Log("Consumer finished processing all messages")
+		
+		// Wait a bit more for monitoring subscription to detect completion
+		select {
+		case err := <-completionDone:
+			if err != nil {
+				t.Fatalf("WaitForCompletion failed: %v", err)
+			}
+			t.Log("WaitForCompletion detected completion after consumer finished")
+			
+		case <-time.After(15 * time.Second):
+			t.Fatal("WaitForCompletion did not complete within 15 seconds after consumer finished")
+		}
+		
+	case <-time.After(3 * time.Minute):
+		t.Fatal("Test timeout: neither completion nor consumer finished within 3 minutes")
+	}
+
+	// Verify all messages were received
+	if receivedCount != numWorkUnits {
+		t.Errorf("Consumer received %d messages, want %d", receivedCount, numWorkUnits)
+	}
+
+	// Verify distributor status
+	status := dist.GetStatus()
+	t.Logf("Final distributor status: type=%s, is_complete=%v, pending=%d, distributed=%d",
+		status.Type, status.IsComplete, status.PendingCount, status.DistributedCount)
+	
+	if status.DistributedCount != numWorkUnits {
+		t.Errorf("Distributor distributed %d work units, want %d", status.DistributedCount, numWorkUnits)
+	}
+	
+	if !status.IsComplete {
+		t.Error("Distributor should report complete after WaitForCompletion")
+	}
+
+	t.Logf("✓ Successfully tested completion monitoring: %d work units distributed and processed", numWorkUnits)
+}
