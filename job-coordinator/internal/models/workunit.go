@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,14 +19,18 @@ const (
 	WorkUnitStatusFailed       WorkUnitStatus = "failed"
 )
 
+// FileSpec represents a file or file segment within a work unit
+type FileSpec struct {
+	Path      string `json:"path"`                   // Relative path to the file
+	StartLine *int   `json:"start_line,omitempty"`   // Starting line (0-indexed), omitted for whole file
+	EndLine   *int   `json:"end_line,omitempty"`     // Ending line (inclusive), omitted for whole file
+}
+
 // WorkUnit represents a single discrete unit of work
 type WorkUnit struct {
 	ID           string          `json:"work_unit_id"`
 	JobID        string          `json:"job_id"`
-	FilePath     string          `json:"file_path"`
-	StartLine    *int            `json:"start_line,omitempty"`
-	EndLine      *int            `json:"end_line,omitempty"`
-	TotalLines   *int            `json:"total_lines,omitempty"`
+	Files        []FileSpec      `json:"files"`                    // One or more files/segments to process
 	Measures     []string        `json:"measures,omitempty"`
 	MeasuresPath *string         `json:"measures_path,omitempty"`
 	BasePath     string          `json:"base_path"`
@@ -44,34 +49,36 @@ func ValidateWorkUnit(wu *WorkUnit) error {
 		return errors.New("JobID must be non-empty")
 	}
 
-	// FilePath validations
-	if wu.FilePath == "" {
-		return errors.New("FilePath must be non-empty")
+	// Files validation
+	if len(wu.Files) == 0 {
+		return errors.New("Files must contain at least one file")
 	}
-	if filepath.IsAbs(wu.FilePath) || strings.HasPrefix(wu.FilePath, "/") {
-		return errors.New("FilePath must be relative (no leading /)")
-	}
-
-	// Line fields validation - all or none
-	hasStartLine := wu.StartLine != nil
-	hasEndLine := wu.EndLine != nil
-	hasTotalLines := wu.TotalLines != nil
-
-	if hasStartLine != hasEndLine || hasStartLine != hasTotalLines {
-		return errors.New("all line fields (StartLine, EndLine, TotalLines) must be either all present or all nil")
-	}
-
-	// If line fields are present, validate values
-	if hasStartLine {
-		if *wu.StartLine < 0 {
-			return errors.New("StartLine must be >= 0")
+	
+	// Validate each FileSpec
+	for i, file := range wu.Files {
+		if file.Path == "" {
+			return fmt.Errorf("Files[%d].Path must be non-empty", i)
 		}
-		if *wu.EndLine < *wu.StartLine {
-			return errors.New("EndLine must be >= StartLine")
+		if filepath.IsAbs(file.Path) || strings.HasPrefix(file.Path, "/") {
+			return fmt.Errorf("Files[%d].Path must be relative (no leading /)", i)
 		}
-		expectedTotal := *wu.EndLine - *wu.StartLine + 1
-		if *wu.TotalLines != expectedTotal {
-			return errors.New("TotalLines must equal (EndLine - StartLine + 1)")
+		
+		// Line fields validation - both or neither
+		hasStartLine := file.StartLine != nil
+		hasEndLine := file.EndLine != nil
+		
+		if hasStartLine != hasEndLine {
+			return fmt.Errorf("Files[%d]: both StartLine and EndLine must be set, or neither", i)
+		}
+		
+		// If line fields are present, validate values
+		if hasStartLine {
+			if *file.StartLine < 0 {
+				return fmt.Errorf("Files[%d].StartLine must be >= 0", i)
+			}
+			if *file.EndLine < *file.StartLine {
+				return fmt.Errorf("Files[%d].EndLine must be >= StartLine", i)
+			}
 		}
 	}
 

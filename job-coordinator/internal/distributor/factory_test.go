@@ -111,9 +111,9 @@ func TestStdoutDistributor_Distribute(t *testing.T) {
 	dist := NewStdoutDistributor()
 
 	wu := models.WorkUnit{
-		ID:       "test-wu-001",
-		JobID:    "test-job-001",
-		FilePath: "data/patients.ndjson",
+		ID:    "test-wu-001",
+		JobID: "test-job-001",
+		Files: []models.FileSpec{{Path: "data/patients.ndjson"}},
 	}
 
 	// Stdout distributor should always succeed

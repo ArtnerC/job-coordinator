@@ -31,9 +31,9 @@ func TestStdoutDistributorStatus(t *testing.T) {
 
 	// Distribute a work unit
 	workUnit := models.WorkUnit{
-		ID:       "test-1",
-		JobID:    "job-1",
-		FilePath: "test.ndjson",
+		ID:    "test-1",
+		JobID: "job-1",
+		Files: []models.FileSpec{{Path: "test.ndjson"}},
 	}
 	
 	if err := dist.Distribute(workUnit); err != nil {
@@ -52,9 +52,9 @@ func TestStdoutDistributorStatus(t *testing.T) {
 	// Distribute more work units
 	for i := 0; i < 5; i++ {
 		wu := models.WorkUnit{
-			ID:       "test",
-			JobID:    "job-1",
-			FilePath: "test.ndjson",
+			ID:    "test",
+			JobID: "job-1",
+			Files: []models.FileSpec{{Path: "test.ndjson"}},
 		}
 		if err := dist.Distribute(wu); err != nil {
 			t.Fatalf("Distribute() error = %v", err)
@@ -103,9 +103,9 @@ func TestFileDistributorStatus(t *testing.T) {
 	// Distribute work units
 	for i := 0; i < 10; i++ {
 		workUnit := models.WorkUnit{
-			ID:       "test",
-			JobID:    "job-1",
-			FilePath: "test.ndjson",
+			ID:    "test",
+			JobID: "job-1",
+			Files: []models.FileSpec{{Path: "test.ndjson"}},
 		}
 		if err := dist.Distribute(workUnit); err != nil {
 			t.Fatalf("Distribute() error = %v", err)
@@ -239,9 +239,9 @@ func TestDistributorCompletionWorkflow(t *testing.T) {
 			// Distribute work units
 			for i := 0; i < tt.workUnits; i++ {
 				wu := models.WorkUnit{
-					ID:       "test",
-					JobID:    "job-1",
-					FilePath: "test.ndjson",
+					ID:    "test",
+					JobID: "job-1",
+					Files: []models.FileSpec{{Path: "test.ndjson"}},
 				}
 				if err := dist.Distribute(wu); err != nil {
 					t.Fatalf("Distribute() error = %v", err)

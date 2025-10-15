@@ -398,13 +398,12 @@ func TestE2EFileManifest(t *testing.T) {
 // TestE2EWorkUnitSchemaCompliance verifies work units follow the JSON schema
 func TestE2EWorkUnitSchemaCompliance(t *testing.T) {
 	// Create a work unit and verify it has all required fields
+	startLine := 0
+	endLine := 99
 	workUnit := models.WorkUnit{
 		ID:           "test-wu-123",
 		JobID:        "test-job-123",
-		FilePath:     "path/to/file.ndjson", // Relative path
-		StartLine:    intPtr(0),
-		EndLine:      intPtr(99),
-		TotalLines:   intPtr(100),
+		Files:        []models.FileSpec{{Path: "path/to/file.ndjson", StartLine: &startLine, EndLine: &endLine}}, // Relative path with line ranges
 		Measures:     []string{"/measure1.json"},
 		MeasuresPath: nil,
 		BasePath:     "C:\\base\\path", // Absolute base path

@@ -11,13 +11,12 @@ import (
 // T010: Test that work unit JSON schema includes all required fields
 func TestWorkUnitJSONSchema(t *testing.T) {
 	// Create a valid work unit with all required fields
+	startLine := 0
+	endLine := 499
 	workUnit := models.WorkUnit{
 		ID:           "wu-001",
 		JobID:        "job-001",
-		FilePath:     "bundles/bundle_001.ndjson",
-		StartLine:    intPtr(0),
-		EndLine:      intPtr(499),
-		TotalLines:   intPtr(500),
+		Files:        []models.FileSpec{{Path: "bundles/bundle_001.ndjson", StartLine: &startLine, EndLine: &endLine}},
 		Measures:     []string{"/path/to/measure1.json", "/path/to/measure2.json"},
 		MeasuresPath: nil,
 		BasePath:     "/data",
@@ -42,10 +41,7 @@ func TestWorkUnitJSONSchema(t *testing.T) {
 	requiredFields := []string{
 		"job_id",
 		"work_unit_id",
-		"file_path",
-		"start_line",
-		"end_line",
-		"total_lines",
+		"files",
 		"measures",
 		"base_path",
 		"created_at",
@@ -66,21 +62,21 @@ func TestWorkUnitJSONSchema(t *testing.T) {
 		t.Errorf("Expected work_unit_id=%s, got %v", workUnit.ID, schema["work_unit_id"])
 	}
 
-	if schema["file_path"] != workUnit.FilePath {
-		t.Errorf("Expected file_path=%s, got %v", workUnit.FilePath, schema["file_path"])
-	}
-
-	// Verify integer fields
-	if float64(*workUnit.StartLine) != schema["start_line"].(float64) {
-		t.Errorf("Expected start_line=%d, got %v", *workUnit.StartLine, schema["start_line"])
-	}
-
-	if float64(*workUnit.EndLine) != schema["end_line"].(float64) {
-		t.Errorf("Expected end_line=%d, got %v", *workUnit.EndLine, schema["end_line"])
-	}
-
-	if float64(*workUnit.TotalLines) != schema["total_lines"].(float64) {
-		t.Errorf("Expected total_lines=%d, got %v", *workUnit.TotalLines, schema["total_lines"])
+	// Verify files array
+	filesArray, ok := schema["files"].([]interface{})
+	if !ok || len(filesArray) != 1 {
+		t.Errorf("Expected files array with 1 element, got %v", schema["files"])
+	} else {
+		file := filesArray[0].(map[string]interface{})
+		if file["path"] != "bundles/bundle_001.ndjson" {
+			t.Errorf("Expected file path=bundles/bundle_001.ndjson, got %v", file["path"])
+		}
+		if float64(0) != file["start_line"].(float64) {
+			t.Errorf("Expected start_line=0, got %v", file["start_line"])
+		}
+		if float64(499) != file["end_line"].(float64) {
+			t.Errorf("Expected end_line=499, got %v", file["end_line"])
+		}
 	}
 
 	// Verify base_path
@@ -94,10 +90,7 @@ func TestWorkUnitWholeFileMode(t *testing.T) {
 	workUnit := models.WorkUnit{
 		ID:           "wu-002",
 		JobID:        "job-002",
-		FilePath:     "bundles/bundle_002.ndjson",
-		StartLine:    nil,
-		EndLine:      nil,
-		TotalLines:   nil,
+		Files:        []models.FileSpec{{Path: "bundles/bundle_002.ndjson"}}, // No line ranges = whole file
 		Measures:     []string{"/path/to/measure1.json"},
 		MeasuresPath: nil,
 		BasePath:     "/data",
@@ -117,15 +110,12 @@ func TestWorkUnitWholeFileMode(t *testing.T) {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}
 
-	// In whole-file mode, line fields should still be present but set to null
-	// OR the ToJSON() implementation might omit them entirely (omitempty)
-	// Let's check what the actual behavior is
-
-	// The schema should still have required fields like job_id, work_unit_id, etc.
+	// In whole-file mode, line fields should be omitted (not present in Files array)
+	// The schema should have required fields like job_id, work_unit_id, files, etc.
 	requiredFields := []string{
 		"job_id",
 		"work_unit_id",
-		"file_path",
+		"files",
 		"measures",
 		"base_path",
 		"created_at",
@@ -136,18 +126,35 @@ func TestWorkUnitWholeFileMode(t *testing.T) {
 			t.Errorf("Required field '%s' missing from JSON schema", field)
 		}
 	}
+
+	// Verify files array structure - should have path but no line ranges
+	filesArray, ok := schema["files"].([]interface{})
+	if !ok || len(filesArray) != 1 {
+		t.Errorf("Expected files array with 1 element, got %v", schema["files"])
+	} else {
+		file := filesArray[0].(map[string]interface{})
+		if file["path"] != "bundles/bundle_002.ndjson" {
+			t.Errorf("Expected file path=bundles/bundle_002.ndjson, got %v", file["path"])
+		}
+		// In whole-file mode, start_line and end_line should be omitted (due to omitempty)
+		if _, hasStartLine := file["start_line"]; hasStartLine {
+			t.Errorf("Expected no start_line in whole-file mode, but it was present: %v", file["start_line"])
+		}
+		if _, hasEndLine := file["end_line"]; hasEndLine {
+			t.Errorf("Expected no end_line in whole-file mode, but it was present: %v", file["end_line"])
+		}
+	}
 }
 
 // T012: Test work unit with measures_path instead of measures array
 func TestWorkUnitWithMeasuresPath(t *testing.T) {
 	measuresPath := "/path/to/measures"
+	startLine := 0
+	endLine := 999
 	workUnit := models.WorkUnit{
 		ID:           "wu-003",
 		JobID:        "job-003",
-		FilePath:     "bundles/bundle_003.ndjson",
-		StartLine:    intPtr(0),
-		EndLine:      intPtr(999),
-		TotalLines:   intPtr(1000),
+		Files:        []models.FileSpec{{Path: "bundles/bundle_003.ndjson", StartLine: &startLine, EndLine: &endLine}},
 		Measures:     nil,
 		MeasuresPath: &measuresPath,
 		BasePath:     "/data",
@@ -193,13 +200,114 @@ func TestWorkUnitValidation(t *testing.T) {
 	}{
 		{
 			name: "Valid work unit with measures array",
+			workUnit: func() models.WorkUnit {
+				start, end := 0, 499
+				return models.WorkUnit{
+					ID:           "wu-004",
+					JobID:        "job-004",
+					Files:        []models.FileSpec{{Path: "bundles/bundle_004.ndjson", StartLine: &start, EndLine: &end}},
+					Measures:     []string{"/path/to/measure.json"},
+					MeasuresPath: nil,
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
+			expectErr: false,
+		},
+		{
+			name: "Invalid: Both measures and measures_path set",
+			workUnit: func() models.WorkUnit {
+				start, end := 0, 499
+				return models.WorkUnit{
+					ID:           "wu-005",
+					JobID:        "job-005",
+					Files:        []models.FileSpec{{Path: "bundles/bundle_005.ndjson", StartLine: &start, EndLine: &end}},
+					Measures:     []string{"/path/to/measure.json"},
+					MeasuresPath: stringPtr("/path/to/measures"),
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
+			expectErr: true,
+			errMsg:    "exactly one of Measures or MeasuresPath must be set",
+		},
+		{
+			name: "Invalid: Neither measures nor measures_path set",
+			workUnit: func() models.WorkUnit {
+				start, end := 0, 499
+				return models.WorkUnit{
+					ID:           "wu-006",
+					JobID:        "job-006",
+					Files:        []models.FileSpec{{Path: "bundles/bundle_006.ndjson", StartLine: &start, EndLine: &end}},
+					Measures:     nil,
+					MeasuresPath: nil,
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
+			expectErr: true,
+			errMsg:    "exactly one of Measures or MeasuresPath must be set",
+		},
+		{
+			name: "Invalid: Inconsistent line fields (only StartLine set)",
+			workUnit: func() models.WorkUnit {
+				start := 0
+				return models.WorkUnit{
+					ID:           "wu-007",
+					JobID:        "job-007",
+					Files:        []models.FileSpec{{Path: "bundles/bundle_007.ndjson", StartLine: &start, EndLine: nil}},
+					Measures:     []string{"/path/to/measure.json"},
+					MeasuresPath: nil,
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
+			expectErr: true,
+			errMsg:    "both StartLine and EndLine must be set or both must be nil",
+		},
+		{
+			name: "Invalid: EndLine < StartLine",
+			workUnit: func() models.WorkUnit {
+				start, end := 100, 50
+				return models.WorkUnit{
+					ID:           "wu-008",
+					JobID:        "job-008",
+					Files:        []models.FileSpec{{Path: "bundles/bundle_008.ndjson", StartLine: &start, EndLine: &end}},
+					Measures:     []string{"/path/to/measure.json"},
+					MeasuresPath: nil,
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
+			expectErr: true,
+			errMsg:    "EndLine must be >= StartLine",
+		},
+		{
+			name: "Invalid: Absolute file path (should be relative)",
 			workUnit: models.WorkUnit{
-				ID:           "wu-004",
-				JobID:        "job-004",
-				FilePath:     "bundles/bundle_004.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(500),
+				ID:           "wu-010",
+				JobID:        "job-010",
+				Files:        []models.FileSpec{{Path: "/absolute/path/bundle.ndjson"}},
+				Measures:     []string{"/path/to/measure.json"},
+				MeasuresPath: nil,
+				BasePath:     "/data",
+				CreatedAt:    time.Now(),
+				Status:       models.WorkUnitStatusPending,
+			},
+			expectErr: true,
+			errMsg:    "file path must be relative",
+		},
+		{
+			name: "Valid: Whole file (no line ranges)",
+			workUnit: models.WorkUnit{
+				ID:           "wu-011",
+				JobID:        "job-011",
+				Files:        []models.FileSpec{{Path: "bundles/bundle_011.ndjson"}},
 				Measures:     []string{"/path/to/measure.json"},
 				MeasuresPath: nil,
 				BasePath:     "/data",
@@ -209,128 +317,24 @@ func TestWorkUnitValidation(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "Invalid: Both measures and measures_path set",
-			workUnit: models.WorkUnit{
-				ID:           "wu-005",
-				JobID:        "job-005",
-				FilePath:     "bundles/bundle_005.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(500),
-				Measures:     []string{"/path/to/measure.json"},
-				MeasuresPath: stringPtr("/path/to/measures"),
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "exactly one of Measures or MeasuresPath must be set",
-		},
-		{
-			name: "Invalid: Neither measures nor measures_path set",
-			workUnit: models.WorkUnit{
-				ID:           "wu-006",
-				JobID:        "job-006",
-				FilePath:     "bundles/bundle_006.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(500),
-				Measures:     nil,
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "exactly one of Measures or MeasuresPath must be set",
-		},
-		{
-			name: "Invalid: Inconsistent line fields (only StartLine)",
-			workUnit: models.WorkUnit{
-				ID:           "wu-007",
-				JobID:        "job-007",
-				FilePath:     "bundles/bundle_007.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      nil,
-				TotalLines:   nil,
-				Measures:     []string{"/path/to/measure.json"},
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "StartLine, EndLine, and TotalLines must all be set or all be nil",
-		},
-		{
-			name: "Invalid: EndLine < StartLine",
-			workUnit: models.WorkUnit{
-				ID:           "wu-008",
-				JobID:        "job-008",
-				FilePath:     "bundles/bundle_008.ndjson",
-				StartLine:    intPtr(100),
-				EndLine:      intPtr(50),
-				TotalLines:   intPtr(0),
-				Measures:     []string{"/path/to/measure.json"},
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "EndLine must be >= StartLine",
-		},
-		{
-			name: "Invalid: Incorrect TotalLines calculation",
-			workUnit: models.WorkUnit{
-				ID:           "wu-009",
-				JobID:        "job-009",
-				FilePath:     "bundles/bundle_009.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(1000), // Should be 500
-				Measures:     []string{"/path/to/measure.json"},
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "TotalLines must equal (EndLine - StartLine + 1)",
-		},
-		{
-			name: "Invalid: Relative file path",
-			workUnit: models.WorkUnit{
-				ID:           "wu-010",
-				JobID:        "job-010",
-				FilePath:     "/absolute/path/bundle.ndjson", // Should be relative
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(500),
-				Measures:     []string{"/path/to/measure.json"},
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
-			expectErr: true,
-			errMsg:    "FilePath must be relative",
-		},
-		{
-			name: "Valid: Measures with any path format (validation doesn't enforce absolute)",
-			workUnit: models.WorkUnit{
-				ID:           "wu-011",
-				JobID:        "job-011",
-				FilePath:     "bundles/bundle_011.ndjson",
-				StartLine:    intPtr(0),
-				EndLine:      intPtr(499),
-				TotalLines:   intPtr(500),
-				Measures:     []string{"/path/to/measure.json"}, // Current validation accepts any format
-				MeasuresPath: nil,
-				BasePath:     "/data",
-				CreatedAt:    time.Now(),
-				Status:       models.WorkUnitStatusPending,
-			},
+			name: "Valid: Multiple files in batch",
+			workUnit: func() models.WorkUnit {
+				start1, end1 := 0, 99
+				start2, end2 := 0, 49
+				return models.WorkUnit{
+					ID:    "wu-012",
+					JobID: "job-012",
+					Files: []models.FileSpec{
+						{Path: "bundles/bundle_012a.ndjson", StartLine: &start1, EndLine: &end1},
+						{Path: "bundles/bundle_012b.ndjson", StartLine: &start2, EndLine: &end2},
+					},
+					Measures:     []string{"/path/to/measure.json"},
+					MeasuresPath: nil,
+					BasePath:     "/data",
+					CreatedAt:    time.Now(),
+					Status:       models.WorkUnitStatusPending,
+				}
+			}(),
 			expectErr: false,
 		},
 	}

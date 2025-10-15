@@ -128,7 +128,8 @@ func (d *PubSubDistributor) Distribute(workUnit models.WorkUnit) error {
 			"job_id":        workUnit.JobID,
 			"work_unit_id":  workUnit.ID,
 			"content_type":  "application/json",
-			"file_path":     workUnit.FilePath,
+			"file_count":    fmt.Sprintf("%d", len(workUnit.Files)),
+			"measure_count": fmt.Sprintf("%d", len(workUnit.Measures)),
 		},
 	}
 

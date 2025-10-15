@@ -128,13 +128,13 @@ func TestPubSubDistributor_WithEmulator(t *testing.T) {
 		{
 			ID:       "wu-001",
 			JobID:    "job-001",
-			FilePath: "data/file1.ndjson",
+			Files:    []models.FileSpec{{Path: "data/file1.ndjson"}},
 			BasePath: "/base",
 		},
 		{
 			ID:       "wu-002",
 			JobID:    "job-001",
-			FilePath: "data/file2.ndjson",
+			Files:    []models.FileSpec{{Path: "data/file2.ndjson"}},
 			BasePath: "/base",
 		},
 	}
@@ -338,7 +338,7 @@ func createTestWorkUnit(id, jobID, filePath string) models.WorkUnit {
 	return models.WorkUnit{
 		ID:       id,
 		JobID:    jobID,
-		FilePath: filePath,
+		Files:    []models.FileSpec{{Path: filePath}},
 		BasePath: "/test/base",
 		Status:   models.WorkUnitStatusPending,
 	}

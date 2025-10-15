@@ -271,30 +271,33 @@ func (c *Coordinator) processScaleLoad(files []string, measures []string, target
 		batchLines := *batch.TotalLines
 		remainingLines := targetLineCount - linesGenerated
 		
-		// If this batch would exceed target, truncate it
+		// Create file spec for this batch
+		var fileSpec models.FileSpec
 		if batchLines > remainingLines {
-			batchLines = remainingLines
-			// Create truncated batch
+			// Truncate batch to fit remaining lines
 			start := *batch.StartLine
-			end := start + batchLines - 1
-			truncatedBatch := processor.BatchRange{
-				StartLine:  &start,
-				EndLine:    &end,
-				TotalLines: &batchLines,
+			end := start + remainingLines - 1
+			fileSpec = models.FileSpec{
+				Path:      firstFile,
+				StartLine: &start,
+				EndLine:   &end,
 			}
-			if err := c.distributeBatch(firstFile, truncatedBatch, measures); err != nil {
-				c.incrementErrorCount()
-				return err
-			}
+			linesGenerated += remainingLines
 		} else {
 			// Use full batch
-			if err := c.distributeBatch(firstFile, batch, measures); err != nil {
-				c.incrementErrorCount()
-				return err
+			fileSpec = models.FileSpec{
+				Path:      firstFile,
+				StartLine: batch.StartLine,
+				EndLine:   batch.EndLine,
 			}
+			linesGenerated += batchLines
 		}
 		
-		linesGenerated += batchLines
+		if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+			c.incrementErrorCount()
+			return err
+		}
+		
 		batchIndex++
 		workUnitCount++
 	}
@@ -305,85 +308,232 @@ func (c *Coordinator) processScaleLoad(files []string, measures []string, target
 	return nil
 }
 
-// processFiles processes all discovered files concurrently using a worker pool.
+// processFiles processes all discovered files using unified batching algorithm.
+// The algorithm handles all scenarios:
+// - batch_size=0: whole files, one file per work unit
+// - batch_size>0 + multifile-batches=true: accumulate files into batches
+// - batch_size>0 + multifile-batches=false: split large files into batches
 func (c *Coordinator) processFiles(files []string, measures []string) error {
-	// Create worker pool
-	maxWorkers := c.cfg.ConcurrentFileProcessors
-	fileChan := make(chan string, len(files))
-	errChan := make(chan error, len(files))
-	var wg sync.WaitGroup
-
-	// Start workers
-	for i := 0; i < maxWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for file := range fileChan {
-				if err := c.processFile(file, measures); err != nil {
-					errChan <- fmt.Errorf("failed to process %s: %w", file, err)
-					return
-				}
-			}
-		}()
-	}
-
-	// Enqueue files
-	for _, file := range files {
-		fileChan <- file
-	}
-	close(fileChan)
-
-	// Wait for workers to finish
-	wg.Wait()
-	close(errChan)
-
-	// Check for errors
-	for err := range errChan {
-		return err
-	}
-
-	return nil
+	return c.processFilesWithUnifiedBatching(files, measures)
 }
 
-// processFile processes a single FHIR bundle file: counts lines, splits batches, creates work units.
-func (c *Coordinator) processFile(file string, measures []string) error {
-	// Handle batch_size=0 (whole file mode) - skip line counting
+// FileWithLineCount represents a file and its line count
+type FileWithLineCount struct {
+	Path      string
+	LineCount int
+}
+
+// processFilesWithUnifiedBatching implements the unified batching algorithm that handles:
+// 1. batch_size=0: one whole file per work unit
+// 2. batch_size>0 + multifile=true: accumulate multiple whole files until batch_size
+// 3. batch_size>0 + multifile=false: split large files into batched segments
+func (c *Coordinator) processFilesWithUnifiedBatching(files []string, measures []string) error {
+	// Handle batch_size=0 (whole file mode) - no line counting needed
 	if c.cfg.BatchSize == 0 {
-		return c.distributeWholeFile(file, measures)
+		for _, file := range files {
+			fileSpec := models.FileSpec{Path: file}
+			if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+				c.incrementErrorCount()
+				return err
+			}
+			c.incrementProcessedCount()
+		}
+		return nil
 	}
 
-	// Construct full path from base path + relative file path
-	fullPath := joinPath(c.cfg.BasePath, file)
+	// batch_size > 0: need to count lines in all files
+	type countResult struct {
+		file      string
+		lineCount int
+		err       error
+	}
 	
-	// Count lines in the file (only needed for batching mode)
-	lineCount, err := processor.CountLines(fullPath)
-	if err != nil {
-		c.incrementErrorCount()
-		return fmt.Errorf("failed to count lines: %w", err)
+	resultChan := make(chan countResult, len(files))
+	semaphore := make(chan struct{}, c.cfg.ConcurrentFileProcessors)
+	
+	for _, file := range files {
+		file := file // capture loop variable
+		go func() {
+			semaphore <- struct{}{} // acquire
+			defer func() { <-semaphore }() // release
+			
+			fullPath := joinPath(c.cfg.BasePath, file)
+			lineCount, err := processor.CountLines(fullPath)
+			resultChan <- countResult{file: file, lineCount: lineCount, err: err}
+		}()
 	}
+	
+	// Collect line count results (order doesn't matter for batching efficiency)
+	fileCounts := make([]FileWithLineCount, 0, len(files))
+	for i := 0; i < len(files); i++ {
+		result := <-resultChan
+		if result.err != nil {
+			c.incrementErrorCount()
+			return fmt.Errorf("failed to count lines in %s: %w", result.file, result.err)
+		}
+		fileCounts = append(fileCounts, FileWithLineCount{
+			Path:      result.file,
+			LineCount: result.lineCount,
+		})
+	}
+	close(resultChan)
+	
+	// Now process files based on multifile-batches setting
+	if c.cfg.MultifileBatches {
+		// Multi-file batching: accumulate whole files until batch_size reached
+		return c.processWithMultifileBatching(fileCounts, measures)
+	} else {
+		// Single-file batching: split individual files that exceed batch_size
+		return c.processWithSingleFileBatching(fileCounts, measures)
+	}
+}
 
-	// Split file into batches
-	batches := processor.SplitIntoBatches(lineCount, c.cfg.BatchSize, c.cfg.RemainderThreshold)
-
-	// Create and distribute work units for each batch
-	for _, batch := range batches {
-		if err := c.distributeBatch(file, batch, measures); err != nil {
+// processWithMultifileBatching accumulates multiple whole files into work units,
+// and can also include partial segments of large files to fill batches efficiently.
+// Algorithm aims for batches of ~batch_size lines with variance up to remainder_threshold,
+// minimizing file splits.
+func (c *Coordinator) processWithMultifileBatching(fileCounts []FileWithLineCount, measures []string) error {
+	currentBatch := []models.FileSpec{}
+	currentLines := 0
+	maxBatchSize := int(float64(c.cfg.BatchSize) * (1.0 + c.cfg.RemainderThreshold))
+	
+	for _, fc := range fileCounts {
+		remainingLines := fc.LineCount
+		currentSegmentStart := 0
+		
+		for remainingLines > 0 {
+			// Can we add this whole file/segment to current batch within threshold?
+			if currentLines+remainingLines <= maxBatchSize {
+				// Yes - add whole file/segment to current batch
+				fileSpec := models.FileSpec{Path: fc.Path}
+				if currentSegmentStart > 0 || remainingLines < fc.LineCount {
+					// This is a segment (not the original whole file)
+					start := currentSegmentStart
+					end := currentSegmentStart + remainingLines - 1
+					fileSpec.StartLine = &start
+					fileSpec.EndLine = &end
+				}
+				currentBatch = append(currentBatch, fileSpec)
+				currentLines += remainingLines
+				remainingLines = 0
+				
+				// Emit batch if we've reached target size
+				if currentLines >= c.cfg.BatchSize {
+					if err := c.distributeWorkUnit(currentBatch, measures); err != nil {
+						c.incrementErrorCount()
+						return err
+					}
+					c.incrementProcessedCount()
+					currentBatch = []models.FileSpec{}
+					currentLines = 0
+				}
+			} else {
+				// File/segment doesn't fit - emit current batch and handle the file
+				if len(currentBatch) > 0 {
+					if err := c.distributeWorkUnit(currentBatch, measures); err != nil {
+						c.incrementErrorCount()
+						return err
+					}
+					c.incrementProcessedCount()
+					currentBatch = []models.FileSpec{}
+					currentLines = 0
+				}
+				
+				// If remaining file/segment is smaller than batch_size, send as whole file
+				if remainingLines <= c.cfg.BatchSize {
+					fileSpec := models.FileSpec{Path: fc.Path}
+					if currentSegmentStart > 0 {
+						// This is a segment
+						start := currentSegmentStart
+						end := currentSegmentStart + remainingLines - 1
+						fileSpec.StartLine = &start
+						fileSpec.EndLine = &end
+					}
+					if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+						c.incrementErrorCount()
+						return err
+					}
+					c.incrementProcessedCount()
+					remainingLines = 0
+				} else {
+					// Split the large file into optimal segments using remainder threshold
+					batches := processor.SplitIntoBatches(remainingLines, c.cfg.BatchSize, c.cfg.RemainderThreshold)
+					
+					for _, batch := range batches {
+						start := currentSegmentStart + *batch.StartLine
+						end := currentSegmentStart + *batch.EndLine
+						fileSpec := models.FileSpec{
+							Path:      fc.Path,
+							StartLine: &start,
+							EndLine:   &end,
+						}
+						
+						// Each large file segment becomes its own work unit
+						if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+							c.incrementErrorCount()
+							return err
+						}
+						c.incrementProcessedCount()
+					}
+					
+					remainingLines = 0
+				}
+			}
+		}
+	}
+	
+	// Emit final batch if not empty
+	if len(currentBatch) > 0 {
+		if err := c.distributeWorkUnit(currentBatch, measures); err != nil {
 			c.incrementErrorCount()
 			return err
 		}
+		c.incrementProcessedCount()
 	}
-
+	
 	return nil
 }
 
-// distributeWholeFile creates and distributes a single work unit for the entire file.
-func (c *Coordinator) distributeWholeFile(file string, measures []string) error {
+// processWithSingleFileBatching splits individual files into batches
+func (c *Coordinator) processWithSingleFileBatching(fileCounts []FileWithLineCount, measures []string) error {
+	for _, fc := range fileCounts {
+		// If file is smaller than batch size, send whole file without line ranges
+		if fc.LineCount <= c.cfg.BatchSize {
+			fileSpec := models.FileSpec{Path: fc.Path}
+			if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+				c.incrementErrorCount()
+				return err
+			}
+			c.incrementProcessedCount()
+			continue
+		}
+		
+		// Split large file into batches
+		batches := processor.SplitIntoBatches(fc.LineCount, c.cfg.BatchSize, c.cfg.RemainderThreshold)
+		
+		for _, batch := range batches {
+			fileSpec := models.FileSpec{
+				Path:      fc.Path,
+				StartLine: batch.StartLine,
+				EndLine:   batch.EndLine,
+			}
+			if err := c.distributeWorkUnit([]models.FileSpec{fileSpec}, measures); err != nil {
+				c.incrementErrorCount()
+				return err
+			}
+		}
+		c.incrementProcessedCount()
+	}
+	
+	return nil
+}
+
+// distributeWorkUnit creates and distributes a work unit with the given file specs
+func (c *Coordinator) distributeWorkUnit(files []models.FileSpec, measures []string) error {
 	workUnit := models.WorkUnit{
 		ID:           generateWorkUnitID(),
 		JobID:        c.job.ID,
-		FilePath:     file,
-		StartLine:    nil,
-		EndLine:      nil,
+		Files:        files,
 		MeasuresPath: c.buildMeasuresPath(measures),
 		Measures:     measures,
 		BasePath:     c.cfg.BasePath,
@@ -396,32 +546,6 @@ func (c *Coordinator) distributeWholeFile(file string, measures []string) error 
 	}
 
 	c.incrementTotalWorkUnits()
-	c.incrementProcessedCount()
-	return nil
-}
-
-// distributeBatch creates and distributes a work unit for a specific batch.
-func (c *Coordinator) distributeBatch(file string, batch processor.BatchRange, measures []string) error {
-	workUnit := models.WorkUnit{
-		ID:           generateWorkUnitID(),
-		JobID:        c.job.ID,
-		FilePath:     file,
-		StartLine:    batch.StartLine,
-		EndLine:      batch.EndLine,
-		TotalLines:   batch.TotalLines,
-		MeasuresPath: c.buildMeasuresPath(measures),
-		Measures:     measures,
-		BasePath:     c.cfg.BasePath,
-		Status:       models.WorkUnitStatusPending,
-	}
-
-	if err := c.distributor.Distribute(workUnit); err != nil {
-		c.incrementErrorCount()
-		return fmt.Errorf("distribution failed: %w", err)
-	}
-
-	c.incrementTotalWorkUnits()
-	c.incrementProcessedCount()
 	return nil
 }
 
