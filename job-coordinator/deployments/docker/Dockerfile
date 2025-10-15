@@ -1,31 +1,29 @@
 # Stage 1: Build
-FROM golang:1.21-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
+FROM golang:1.24-alpine AS builder
 
 # Set working directory
 WORKDIR /build
 
-# Copy go mod files
-COPY go.mod go.sum* ./
+# Copy go mod files first for better layer caching
+COPY go.mod go.sum ./
 
-# Download dependencies
+# Download dependencies (cached if go.mod/go.sum unchanged)
 RUN go mod download
 
 # Copy source code
 COPY . .
 
-# Build the binary
+# Build the binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s" \
+    -trimpath \
     -o coordinator \
     ./cmd/coordinator
 
 # Stage 2: Runtime
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS
+# Install ca-certificates for HTTPS (required for GCS access)
 RUN apk --no-cache add ca-certificates
 
 # Create non-root user
@@ -36,10 +34,10 @@ RUN addgroup -g 1000 coordinator && \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/coordinator /coordinator
+COPY --from=builder /build/coordinator ./coordinator
 
 # Change ownership
-RUN chown coordinator:coordinator /coordinator
+RUN chown coordinator:coordinator coordinator
 
 # Switch to non-root user
 USER coordinator
@@ -48,4 +46,4 @@ USER coordinator
 EXPOSE 8080
 
 # Set entrypoint
-ENTRYPOINT ["/coordinator"]
+ENTRYPOINT ["./coordinator"]
