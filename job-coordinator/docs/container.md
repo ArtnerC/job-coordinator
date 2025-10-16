@@ -1,85 +1,134 @@
+# CQL SDK Container Architecture
+
+This document describes the containerization strategy for the CQL SDK and how it integrates with various services in the system.
+
+## CQL Container Design
+
+The following diagram illustrates the four-layer architecture, showing how services interact with containerized CQL SDK entry points.
+
 ```mermaid
 block-beta
   columns 3
 
   %% LAYER 4 — Callers/Services
-  svc_exec["Service: CQL Job Runner<br/>Batch/stream orchestration; calls Execute"]
-  svc_build["Service: UI / Build Task<br/>User-driven pipeline; produces versioned libraries"]
-  svc_pop["Service: Population Build Process<br/>ETL/Population prep; triggers FHIR validation"]
+  svc_exec["☁️ Service: CQL Job Runner<br/>Batch/stream orchestration; calls Execute"]
+  svc_build["🎨 Service: UI / Build Task<br/>User-driven pipeline; produces versioned libraries"]
+  svc_pop["📊 Service: Population Build Process<br/>ETL/Population prep; triggers FHIR validation"]
 
   space:3
 
   %% LAYER 3 — Entry Points (same image, different commands)
-  exec["Entry: Execute CQL<br/>Run measures/rules over patient bundles"]
-  buildlib["Entry: Build Library<br/>Compile & validate CQL→ELM; package artifacts"]
-  validate["Entry: Validate FHIR<br/>FHIR schema/profile validation & conformance checks"]
+  exec["▶️ Entry: Execute CQL<br/>Run measures/rules over patient bundles"]
+  buildlib["🔨 Entry: Build Library<br/>Compile & validate CQL→ELM; package artifacts"]
+  validate["✅ Entry: Validate FHIR<br/>FHIR schema/profile validation & conformance checks"]
 
   %% LAYER 2 — Containerization
-  container["Linux Container<br/>Single, versioned image packaging the CQL SDK and CLIs"]:3
+  container["🐳 Linux Container<br/>Single, versioned image packaging the CQL SDK and CLIs"]:3
 
   %% LAYER 1 — Core SDK
-  core[".NET CQL SDK<br/>Core evaluation engine, parsers, temporal ops, model types"]:3
+  core["⚙️ .NET CQL SDK<br/>Core evaluation engine, parsers, temporal ops, model types"]:3
 
   %% FLOWS BETWEEN LAYERS
   svc_exec --> exec
   svc_build --> buildlib
   svc_pop --> validate
+
+  %% STYLING
+  classDef services fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+  classDef entries fill:#fff3e0,stroke:#e65100,stroke-width:2px
+  classDef container fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+  classDef sdk fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+
+  class svc_exec,svc_build,svc_pop services
+  class exec,buildlib,validate entries
+  class container container
+  class core sdk
 ```
 
+**Layer 1 - Core SDK**: The .NET CQL SDK provides the foundational evaluation engine, parsers, temporal operations, and model types.
 
+**Layer 2 - Containerization**: A single, versioned Linux container image packages the CQL SDK and CLI tools, ensuring consistent runtime environments.
 
-```mermaid
-flowchart LR
-    subgraph Build_Pipeline
-      direction TB
-      B0[Source CQL] --> B1["Build Library<br/>CQL→ELM, Validate"]
-      B1 -->|stamp metadata| B2["Library Artifact<br/>sdk_version = vX"]
-    end
+**Layer 3 - Entry Points**: The same container image supports multiple entry points (execute, build, validate) through different commands.
 
-    subgraph Container_Images
-      direction TB
-      I1[linux-cql-sdk:vX]:::img
-      I2[linux-cql-sdk:vY]:::img
-    end
+**Layer 4 - Services**: Various services invoke the appropriate entry points based on their needs (job execution, library building, FHIR validation).
 
-    subgraph Execution_Path
-      direction TB
-      E0[Job Runner / Service] --> E1{Runtime Image Selected?}
-      E1 -->|vX| E2[Execute on linux-cql-sdk:vX]
-      E1 -->|vY| E3[Execute on linux-cql-sdk:vY]
-    end
+## Measure Build and Execution Pipeline
 
-    B2 -->|requires vX| E1
-    E2 -->|OK<br/>versions match| R1[Results]
-    E3 --> E4{Compatible?}
-    E4 -->|No| R2[Fail & Advise Recompile]
-    E4 -->|Yes - policy| R3[Proceed w/ Compatibility Shims]
+This workflow shows the end-to-end process from measure authoring/import through build, caching, and parallel execution across pods.
 
-    classDef img fill:#eee,stroke:#666,stroke-width:1px;
-```
+### Key Components
 
+**Input Sources**:
 
-```mermaid
-flowchart TB
-    A[Commit / Tag] --> B[CI Build SDK/CLI]
-    B --> C[Build linux-cql-sdk]
-    C --> D[Publish & Sign<br/>MAJOR.MINOR.PATCH]
-    D --> E[Promote to Environments<br/>dev to stage to prod]
-    E --> F[Pin Job Runner Workloads<br/>by exact tag or policy]
-    F --> G[Audit & SBOM<br/>version, ELM producer, FHIR packages]
-```
+- Custom CQL files authored by users
+- HEDIS measures imported from external sources (C# and DLLs are stripped to ensure we build with our versioned SDK)
 
+**Base Measure Library**: Central repository storing CQL files and FHIR measure bundles (metadata).
+
+**SDK Version Selection**: Each measure run configuration specifies which SDK version to use for building, ensuring compatibility and reproducibility.
+
+**Parallel Builds**: Multiple measures can be built simultaneously using different SDK versions as needed.
+
+**Filestore Cache**: Versioned measure bundles are stored in a shared filestore, organized by SDK version, which execution pods mount as volumes.
+
+**Highly Parallel Execution**: Multiple pods execute different measures concurrently, each using the appropriate SDK version specified during the build phase.
 
 ```mermaid
 flowchart TB
-  %% LAYER 4 — Callers
-  A1[Service: CQL Job Runner] --> B1[Entry: Execute CQL]
-  A2[Service: UI / Build Task] --> B2[Entry: Build Library]
-  A3[Service: Population Build Process] --> B3[Entry: Validate FHIR]
+    %% INPUT SOURCES
+    A1[Author Custom CQL] --> ML
+    A2[Import HEDIS Measures] --> Strip[Strip C# & DLLs]
+    Strip --> ML
 
-  %% LAYER 3 → 2 → 1
-  B1 --> C["Linux Container - SDK Installed"]
-  B2 --> C
-  B3 --> C
-  C  --> D[.NET CQL SDK]
+    %% BASE MEASURE LIBRARY
+    ML[("Base Measure Library<br/>CQL Files + FHIR Measure Bundles")]
+
+    %% MEASURE RUN CONFIGURATION
+    ML --> RunConfig[Measure Run Config]
+    SDK_Select[Select/Default SDK Version] --> RunConfig
+
+    %% TRIGGER BUILD
+    RunConfig --> Trigger{Trigger Build}
+
+    %% PARALLEL MEASURE BUILDS
+    Trigger --> Build1[Build Measure 1<br/>with SDK vX]
+    Trigger --> Build2[Build Measure 2<br/>with SDK vX]
+    Trigger --> Build3[Build Measure N<br/>with SDK vY]
+
+    %% SAVE TO FILESTORE CACHE
+    Build1 --> Cache
+    Build2 --> Cache
+    Build3 --> Cache
+    Cache[("Filestore Cache<br/>Versioned Measure Bundles<br/>by SDK version")]
+
+    %% EXECUTION QUEUE
+    Cache --> Queue[Measure Execution Queue]
+
+    %% EXECUTION PODS
+    subgraph Pods[Execution Pods - Highly Parallel]
+        direction LR
+        Pod1["Pod 1<br/>Executing Measure 1<br/>on SDK vX"]
+        Pod2["Pod 2<br/>Executing Measure 2<br/>on SDK vX"]
+        Pod3["Pod 3<br/>Executing Measure N<br/>on SDK vY"]
+        PodN["Pod ...<br/>Executing Measure ...<br/>on SDK ..."]
+    end
+
+    %% MOUNT VOLUMES
+    Queue --> Pods
+    Cache -.mount volumes.-> Pods
+
+    %% RESULTS
+    Pods --> Results[Execution Results]
+
+    %% STYLING
+    classDef library fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef build fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef cache fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef pod fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+
+    class ML,Cache library
+    class Build1,Build2,Build3 build
+    class Cache cache
+    class Pod1,Pod2,Pod3,PodN pod
 ```
