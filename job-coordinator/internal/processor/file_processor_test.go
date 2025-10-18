@@ -190,3 +190,132 @@ func TestCountLines_ActualTestData(t *testing.T) {
 		t.Errorf("CountLines() = %d, want 3", count)
 	}
 }
+
+func TestCountLines_LargeLines(t *testing.T) {
+	// Test files with lines exceeding different buffer size thresholds
+	// bufio.Scanner default max is 64KB, we've configured 10MB max
+	tests := []struct {
+		name      string
+		lineSize  int
+		numLines  int
+		wantLines int
+		wantErr   bool
+	}{
+		{
+			name:      "lines under 64KB (default scanner limit)",
+			lineSize:  50 * 1024, // 50KB per line
+			numLines:  5,
+			wantLines: 5,
+			wantErr:   false,
+		},
+		{
+			name:      "lines over 64KB but under 512KB",
+			lineSize:  128 * 1024, // 128KB per line
+			numLines:  3,
+			wantLines: 3,
+			wantErr:   false,
+		},
+		{
+			name:      "lines over 512KB but under 1MB",
+			lineSize:  768 * 1024, // 768KB per line
+			numLines:  2,
+			wantLines: 2,
+			wantErr:   false,
+		},
+		{
+			name:      "mixed line sizes - some over 64KB, some over 512KB",
+			lineSize:  -1, // Special case: mixed sizes
+			numLines:  7,
+			wantLines: 7,
+			wantErr:   false,
+		},
+		{
+			name:      "lines at max buffer size (10MB)",
+			lineSize:  9 * 1024 * 1024, // 9MB per line (just under 10MB limit)
+			numLines:  2,
+			wantLines: 2,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpFile, err := os.CreateTemp("", "large-line-test-*.ndjson")
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+			defer os.Remove(tmpFile.Name())
+
+			// Create test content
+			if tt.lineSize == -1 {
+				// Mixed line sizes test case
+				lineSizes := []int{
+					30 * 1024,   // 30KB - under 64KB
+					80 * 1024,   // 80KB - over 64KB
+					256 * 1024,  // 256KB - over 64KB
+					600 * 1024,  // 600KB - over 512KB
+					1024 * 1024, // 1MB - over 512KB
+					45 * 1024,   // 45KB - under 64KB
+					750 * 1024,  // 750KB - over 512KB
+				}
+				for i, size := range lineSizes {
+					line := createJSONLine(size, i)
+					if _, err := tmpFile.WriteString(line + "\n"); err != nil {
+						t.Fatalf("Failed to write line %d: %v", i, err)
+					}
+				}
+			} else {
+				// Fixed line size test cases
+				for i := 0; i < tt.numLines; i++ {
+					line := createJSONLine(tt.lineSize, i)
+					if _, err := tmpFile.WriteString(line + "\n"); err != nil {
+						t.Fatalf("Failed to write line %d: %v", i, err)
+					}
+				}
+			}
+			
+			fileInfo, _ := tmpFile.Stat()
+			tmpFile.Close()
+
+			// Count lines
+			got, err := CountLines(tmpFile.Name())
+			
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CountLines() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			
+			if got != tt.wantLines {
+				t.Errorf("CountLines() = %d, want %d", got, tt.wantLines)
+			}
+
+			// Log file size for verification
+			t.Logf("File size: %.2f MB, Lines counted: %d", 
+				float64(fileInfo.Size())/(1024*1024), got)
+		})
+	}
+}
+
+// createJSONLine creates a realistic FHIR bundle JSON line of approximately the specified size
+func createJSONLine(targetSize int, index int) string {
+	// Start with a basic FHIR bundle structure
+	base := `{"resourceType":"Bundle","type":"collection","id":"bundle-` + 
+		strings.Repeat("0", 10) + `","entry":[{"resource":{"resourceType":"Patient","id":"patient-` +
+		strings.Repeat("x", 20) + `","name":[{"family":"TestPatient","given":["John"]}],"data":"`
+
+	// Calculate padding needed
+	overhead := len(base) + len(`"}}]}`)
+	if overhead >= targetSize {
+		// Minimum size case
+		return base[:len(base)-len(`","data":"`)]+`"}}]}`
+	}
+
+	paddingSize := targetSize - overhead
+	
+	// Create padding with realistic-looking base64-like data
+	padding := strings.Repeat("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", paddingSize/64+1)
+	padding = padding[:paddingSize]
+	
+	return base + padding + `"}}]}`
+}
+
