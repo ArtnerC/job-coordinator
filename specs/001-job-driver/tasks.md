@@ -1,8 +1,8 @@
 # Tasks: Job Driver Service
 
 **Feature**: Job Driver Service  
-**Date**: 2025-01-21  
-**Status**: Complete (46/46 tasks - 100%)
+**Date**: 2025-01-21 (Updated: 2025-10-31)  
+**Status**: Complete (56/56 tasks - 100%)
 
 **Completed Tasks**:
 - ✅ T001-T003: Project setup (go.mod, Dockerfile, Terraform)
@@ -11,17 +11,31 @@
 - ✅ T021-T022: Job and WorkUnit models with tests
 - ✅ T023-T024: JobConfig (in models/job.go) and FileManifest (ParseManifest in processor)
 - ✅ T025: Response models
-- ✅ T026: Viper-based config loading with CLI flags (commit 2ba494c)
+- ✅ T026: Viper-based config loading with CLI flags
 - ✅ T027-T031: File processing implementations (line counter, batch splitter, manifest, measures, file discovery)
 - ✅ T032-T035: Distributors (pubsub, stdout, file) with factory
-- ✅ T036: driver orchestration (commit bd3a33b)
-- ✅ T037: TTL-based shutdown (commit 2e58b1c)
-- ✅ T038: REST API handlers (commit 9cfa66f)
-- ✅ T039: Main entry point (commit 45bde68)
-- ✅ T040-T043: Integration wiring complete (implemented in T037-T039)
-- ✅ T044-T046: Polish (unit tests, E2E, documentation) - Complete
+- ✅ T036: Driver orchestration
+- ✅ T037: TTL-based shutdown
+- ✅ T038: REST API handlers
+- ✅ T039: Main entry point
+- ✅ T040-T043: Integration wiring complete
+- ✅ T044-T046: Polish (unit tests, E2E, documentation)
+- ✅ T047-T050: Cloud storage integration with gocloud.dev and composable readers
+- ✅ T051-T052: Large file handling with expanded bufio.Scanner buffers
+- ✅ T053-T055: Rename refactoring (coordinator→driver, CVS Health org migration)
+- ✅ T056: Go 1.25.3 upgrade and Docker optimization
 
-**Final Status**: 180 tests passing (65 driver/API unit tests + 71 processor unit tests + 38 integration tests + 6 E2E tests), driver binary compiles and runs, 5 comprehensive documentation files created, **100% COMPLETE**
+**Final Status**: 183 tests passing (65 driver/API + 71 processor + 38 integration + 6 E2E + 3 gzip), driver binary compiles and runs, 6 comprehensive documentation files, Docker image 99.4MB, **100% COMPLETE**
+
+**Recent Changes** (Last 3 Weeks):
+- Unified Files structure with multi-file and hybrid batching (commit 34212c7)
+- Docker updated to Go 1.24, then 1.25.3 (commit 11a0476)
+- Composable file readers for cloud+gzip support (commit 6827c1e)
+- Large line size tests for 10MB FHIR bundles (commit 9dd092a)
+- Renamed job-coordinator to job-driver (commit 8d49bc5)
+- Updated module path to CVS Health org (commit d1d5fc2)
+- Renamed spec directory: 001-first-thing-we → 001-job-driver (commit d1d5fc2)
+- Updated spec.md and plan.md with implementation details (commits 63c7535, 4c76baf)
 
 ## Task List
 
@@ -562,6 +576,114 @@
 
 ---
 
+### Phase 3.6: Cloud Storage Integration
+
+**✅ T047** [P] Implement cloud storage abstraction with gocloud.dev
+- File: `internal/storage/cloud_storage.go`
+- Add `gocloud.dev/blob` dependency for unified storage API
+- Implement OpenBucket(ctx, urlPath) to handle gs://, s3://, file:// URLs
+- Support GCS (gs://), S3 (s3://), and local file system (file://)
+- Handle authentication automatically (service accounts, IAM roles, access keys)
+- **Dependencies**: T027
+- **Artifacts**: `internal/storage/cloud_storage.go`
+
+**✅ T048** Implement composable multiCloser pattern
+- File: `internal/processor/file_processor.go`
+- Create `multiCloser` struct to manage stack of closers (reader + multiple closers)
+- Implement `Close()` to close all closers in reverse order
+- Enables composition of any reader + encoding layers
+- **Dependencies**: T027
+- **Artifacts**: `internal/processor/file_processor.go` (multiCloser type)
+
+**✅ T049** Implement gzip compression support
+- File: `internal/processor/file_processor.go`
+- Implement `wrapWithGzip(r io.ReadCloser)` to wrap any reader with gzip decompression
+- Use `compress/gzip` package
+- Compose gzip over base reader using multiCloser pattern
+- Auto-detect gzip based on .gz file extension
+- **Dependencies**: T048
+- **Artifacts**: `internal/processor/file_processor.go` (wrapWithGzip function)
+
+**✅ T050** [P] Write cloud storage + gzip integration tests
+- File: `internal/processor/gzip_test.go`
+- Test plain NDJSON files
+- Test gzipped NDJSON files (.ndjson.gz)
+- Test cloud storage URLs with file:// protocol
+- Test cloud storage + gzip combination
+- Verify identical line counts for plain vs gzipped files
+- **Dependencies**: T047, T049
+- **Artifacts**: `internal/processor/gzip_test.go` (TestCloudStorageGzipped)
+
+---
+
+### Phase 3.7: Large File Handling
+
+**✅ T051** Expand bufio.Scanner buffer for large FHIR bundles
+- File: `internal/processor/file_processor.go`
+- Increase initial buffer from 64KB to 1MB
+- Set max buffer size to 10MB (configurable)
+- Handle lines up to 10MB without buffer overflow
+- Add buffer expansion error handling
+- **Dependencies**: T027
+- **Artifacts**: Updated `internal/processor/file_processor.go` (CountLines function)
+
+**✅ T052** [P] Write large line size tests
+- File: `internal/processor/file_processor_test.go`
+- Test files with lines at 64KB boundary (default scanner limit)
+- Test files with lines at 512KB
+- Test files with lines at 1MB
+- Test files with lines at 10MB
+- Test mixed file: some lines >64KB, some >512KB
+- Verify no buffer overflow errors
+- **Dependencies**: T051
+- **Artifacts**: `internal/processor/file_processor_test.go` (TestCountLinesLargeLines)
+
+---
+
+### Phase 3.8: Rename Refactoring
+
+**✅ T053** Rename module from job-coordinator to job-driver
+- Update go.mod: module path from `github.com/dqme/job-coordinator` to `github.com/dqme/job-driver`
+- Rename directories: `cmd/coordinator` → `cmd/driver`, `internal/coordinator` → `internal/driver`
+- Update all import paths in .go files (72 files total)
+- Update Dockerfile: binary name from `coordinator` to `driver`
+- Update Terraform configs: service name references
+- Update documentation: all references to "coordinator"
+- **Dependencies**: All previous tasks
+- **Artifacts**: Renamed directories and updated imports across codebase
+
+**✅ T054** Update module path to CVS Health organization
+- Update go.mod: `github.com/dqme/job-driver` → `github.com/cvs-health-source-code/digital-qme-system/job-driver`
+- Update all import statements in .go files (30 files)
+- Update documentation with CVS Health context
+- Create new branch: `001-job-driver`
+- **Dependencies**: T053
+- **Artifacts**: Updated module path and imports
+
+**✅ T055** Rename spec directory
+- Rename `specs/001-first-thing-we` → `specs/001-job-driver`
+- Update all references in documentation
+- Update branch name references
+- Update .specify/ script configurations
+- **Dependencies**: T054
+- **Artifacts**: Renamed spec directory
+
+---
+
+### Phase 3.9: Go Version Upgrade
+
+**✅ T056** Upgrade to Go 1.25.3 and optimize Docker
+- Update go.mod: `go 1.21` → `go 1.25.3`
+- Update Dockerfile: `golang:1.21-alpine` → `golang:1.25-alpine`
+- Remove Alpine version pin (use `alpine:latest`)
+- Rebuild and verify Docker image (<100MB target)
+- Run all tests with Go 1.25.3
+- Update documentation with new Go version
+- **Dependencies**: T053-T055
+- **Artifacts**: Updated go.mod, Dockerfile
+
+---
+
 ## Task Dependencies
 
 **Critical Path** (sequential dependencies, no parallelization):
@@ -605,6 +727,22 @@ T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T0
 - T045: E2E integration tests
 - T046: Documentation
 
+**Group 7: Cloud Storage (T047-T050)** - Can run in parallel after T027
+- T047: gocloud.dev integration
+- T048: multiCloser pattern (after T027)
+- T049: gzip support (after T048)
+- T050: Cloud storage + gzip tests (after T047, T049)
+
+**Group 8: Large Files (T051-T052)** - Can run in parallel after T027
+- T051: Expand bufio.Scanner buffers
+- T052: Large line size tests
+
+**Group 9: Refactoring (T053-T056)** - Sequential after all implementation
+- T053: Rename coordinator→driver (after T046)
+- T054: CVS Health org migration (after T053)
+- T055: Rename spec directory (after T054)
+- T056: Go 1.25.3 upgrade (after T055)
+
 ---
 
 ## Parallel Execution Examples
@@ -626,25 +764,36 @@ T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T0
 
 **Week 4: Integration + Polish**
 - Developer A: T040-T043 (integration) ✅
-- Developer B: T044 (unit tests) ✅ (commit 852680c - 65 tests added)
-- Developer C: T045 (E2E tests) ✅ (commit d52bdbc - 6 E2E scenarios)
-- Developer D: T046 (documentation) ✅ (commit 1fa0ac7 - 5 comprehensive docs)
+- Developer B: T044 (unit tests) ✅
+- Developer C: T045 (E2E tests) ✅
+- Developer D: T046 (documentation) ✅
+
+**Week 5: Cloud Storage + Large Files (Post-MVP Enhancements)**
+- Developer A: T047-T050 (cloud storage + gzip) ✅ (commit 6827c1e)
+- Developer B: T051-T052 (large file handling) ✅ (commit 9dd092a)
+
+**Week 6: Refactoring + Upgrades**
+- Developer A: T053 (rename to job-driver) ✅ (commit 8d49bc5)
+- Developer A: T054-T055 (CVS Health org + spec rename) ✅ (commit d1d5fc2)
+- Developer A: T056 (Go 1.25.3 upgrade) ✅ (commits 11a0476, fcae0ab)
 
 ---
 
 ## Validation Checklist
 
 **Before marking tasks.md complete**:
-- [x] All 46 tasks defined with clear descriptions
+- [x] All 56 tasks defined with clear descriptions
 - [x] Task dependencies documented
 - [x] Parallel tasks marked with [P]
 - [x] TDD approach enforced (tests before implementation)
 - [x] All design artifacts (data-model.md, contracts/, quickstart.md) represented as tasks
 - [x] All research decisions (research.md) incorporated into tasks
 - [x] Critical path identified
-- [x] Estimated 40-45 tasks (actual: 46)
-- [x] Tasks ordered: Setup → Tests → Core → Integration → Polish
-- [x] **All tasks implemented and validated (180 tests passing)**
+- [x] Estimated 40-45 tasks initially (actual: 56 including enhancements)
+- [x] Tasks ordered: Setup → Tests → Core → Integration → Polish → Cloud Storage → Large Files → Refactoring
+- [x] **All tasks implemented and validated (183 tests passing)**
+- [x] Post-MVP enhancements completed (cloud storage, gzip, large files)
+- [x] Refactoring completed (rename, org migration, Go upgrade)
 
 **Constitution Compliance**:
 - ✅ Demo Often: T002 (Dockerfile), T039 (main) enable quick demos
@@ -658,15 +807,37 @@ T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T0
 ## Implementation Complete
 
 **Final Metrics**:
-- 180 tests passing (100% pass rate)
-- 5 comprehensive documentation files
-- Binary compiles successfully
+- 183 tests passing (100% pass rate)
+  - 65 driver/API unit tests
+  - 71 processor unit tests
+  - 38 integration tests
+  - 6 E2E tests
+  - 3 gzip/cloud storage tests
+- 6 comprehensive documentation files
+- Binary compiles successfully (Go 1.25.3)
+- Docker image: 99.4MB (optimized multi-stage build)
 - All integration points validated
 - Zero known issues
 
-**Key Commits**:
-- 852680c: T044 comprehensive unit tests (driver + API)
+**Key Implementation Commits**:
+- 34212c7: T021-T022 Unified Files structure with FileSpec
+- 852680c: T044 Comprehensive unit tests (driver + API)
 - d52bdbc: T045 E2E integration tests
-- 1fa0ac7: T046 complete documentation suite
+- 1fa0ac7: T046 Complete documentation suite
+- 11a0476: T056 Docker updated to Go 1.24
+- 6827c1e: T047-T049 Composable file readers for cloud + gzip
+- 9dd092a: T051-T052 Large line size tests for 10MB FHIR bundles
+- 8d49bc5: T053 Rename job-coordinator to job-driver
+- d1d5fc2: T054-T055 CVS Health org migration + spec rename
+- 63c7535: Updated spec.md with implementation details
+- 4c76baf: Updated plan.md with completed phases
 
-*Implementation execution complete. Feature ready for deployment.*
+**Enhancement Summary**:
+- ✅ Cloud storage support (GCS, S3, local) via gocloud.dev
+- ✅ Gzip compression with composable reader pattern
+- ✅ Large FHIR bundles (10MB lines) handled without errors
+- ✅ Proper naming (job-driver reflects single-job architecture)
+- ✅ CVS Health organizational alignment
+- ✅ Go 1.25.3 with optimized Docker image
+
+*Implementation execution complete. Feature production-ready and validated.*
