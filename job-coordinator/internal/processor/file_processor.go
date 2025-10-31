@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dqme/job-coordinator/internal/storage"
@@ -28,45 +29,60 @@ func isCloudStoragePath(path string) bool {
 // The reader must be closed by the caller.
 // Supports both local paths and cloud storage URLs (gs://, s3://, file://)
 func openFileReader(filePath string) (io.ReadCloser, error) {
-	// Check if this is a cloud storage URL
+	var baseReader io.ReadCloser
+	var err error
+
+	// Get the base reader (local file or cloud storage)
 	if isCloudStoragePath(filePath) {
-		return openCloudStorageFile(filePath)
+		baseReader, err = openCloudStorageFile(filePath)
+	} else {
+		baseReader, err = os.Open(filePath)
 	}
 
-	// Local file access
-	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
 	}
 
+	// Compose with gzip reader if needed
 	if isGzipped(filePath) {
-		gzReader, err := gzip.NewReader(file)
-		if err != nil {
-			file.Close()
-			return nil, fmt.Errorf("failed to create gzip reader: %w", err)
-		}
-		// Return a combined closer that closes both gzip reader and file
-		return &gzipReadCloser{gzReader: gzReader, file: file}, nil
+		return wrapWithGzip(baseReader)
 	}
 
-	return file, nil
+	return baseReader, nil
 }
 
 // openCloudStorageFile opens a file from cloud storage (gs://, s3://, file://)
-// Handles gzip decompression automatically via storage.FileReader
+// Returns a composable io.ReadCloser that can be wrapped with additional layers
 func openCloudStorageFile(fileURL string) (io.ReadCloser, error) {
 	ctx := context.Background()
-	
+
 	// Parse the URL to get base path and file key
-	// For gs://bucket/path/to/file.ndjson, we need to extract bucket and file path
 	scheme, bucket, key, err := storage.ParseStorageURL(fileURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse storage URL: %w", err)
 	}
 
-	// Reconstruct base URL (without the file key)
-	baseURL := fmt.Sprintf("%s://%s", scheme, bucket)
+	// For file:// URLs, ParseStorageURL returns empty bucket and full path in key
+	// We need to split the path into directory (for NewReader) and filename (for OpenFile)
+	var baseURL string
+	var filename string
 	
+	if scheme == "file" {
+		// key contains the full path like "tmp/data/file.ndjson" or "C:/Users/file.ndjson"
+		// Split into directory and filename
+		dir, file := filepath.Split(key)
+		if dir == "" {
+			return nil, fmt.Errorf("file path must include directory: %s", fileURL)
+		}
+		// Reconstruct file:// URL with directory only
+		baseURL = "file:///" + filepath.ToSlash(dir)
+		filename = file
+	} else {
+		// For gs:// and s3://, bucket is the host and key is the path
+		baseURL = fmt.Sprintf("%s://%s", scheme, bucket)
+		filename = key
+	}
+
 	// Create storage reader
 	reader, err := storage.NewReader(ctx, baseURL)
 	if err != nil {
@@ -74,52 +90,54 @@ func openCloudStorageFile(fileURL string) (io.ReadCloser, error) {
 	}
 
 	// Open the specific file
-	fileReader, err := reader.OpenFile(key)
+	fileReader, err := reader.OpenFile(filename)
 	if err != nil {
 		reader.Close()
 		return nil, fmt.Errorf("failed to open file in storage: %w", err)
 	}
 
-	// Note: We need a combined closer that closes both the file and the reader
-	return &storageReadCloser{reader: fileReader, bucket: reader}, nil
+	// Return composable closer that manages both file and bucket
+	return &multiCloser{
+		reader:  fileReader,
+		closers: []io.Closer{fileReader, reader},
+	}, nil
 }
 
-// storageReadCloser wraps both the file reader and bucket to close both
-type storageReadCloser struct {
-	reader io.ReadCloser
-	bucket *storage.Reader
-}
-
-func (s *storageReadCloser) Read(p []byte) (n int, err error) {
-	return s.reader.Read(p)
-}
-
-func (s *storageReadCloser) Close() error {
-	readerErr := s.reader.Close()
-	bucketErr := s.bucket.Close()
-	if readerErr != nil {
-		return readerErr
+// wrapWithGzip wraps an io.ReadCloser with gzip decompression
+// Returns a composable reader that closes both the gzip reader and underlying reader
+func wrapWithGzip(r io.ReadCloser) (io.ReadCloser, error) {
+	gzReader, err := gzip.NewReader(r)
+	if err != nil {
+		r.Close()
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	return bucketErr
+
+	return &multiCloser{
+		reader:  gzReader,
+		closers: []io.Closer{gzReader, r},
+	}, nil
 }
 
-// gzipReadCloser wraps both gzip.Reader and os.File to ensure both are closed
-type gzipReadCloser struct {
-	gzReader *gzip.Reader
-	file     *os.File
+// multiCloser is a composable io.ReadCloser that manages multiple closers
+// This allows stacking readers (e.g., gzip over cloud storage) without specific combinations
+type multiCloser struct {
+	reader  io.Reader
+	closers []io.Closer
 }
 
-func (g *gzipReadCloser) Read(p []byte) (n int, err error) {
-	return g.gzReader.Read(p)
+func (m *multiCloser) Read(p []byte) (n int, err error) {
+	return m.reader.Read(p)
 }
 
-func (g *gzipReadCloser) Close() error {
-	gzErr := g.gzReader.Close()
-	fileErr := g.file.Close()
-	if gzErr != nil {
-		return gzErr
+func (m *multiCloser) Close() error {
+	var firstErr error
+	// Close in reverse order (innermost first)
+	for i := len(m.closers) - 1; i >= 0; i-- {
+		if err := m.closers[i].Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return fileErr
+	return firstErr
 }
 
 // CountLines counts the number of lines in a file using streaming approach.
@@ -134,8 +152,9 @@ func CountLines(filePath string) (int, error) {
 	defer reader.Close()
 
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max buffer size
 	count := 0
-	
+
 	for scanner.Scan() {
 		count++
 	}

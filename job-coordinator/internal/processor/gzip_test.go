@@ -228,3 +228,47 @@ func TestLargeGzippedFile(t *testing.T) {
 		t.Errorf("Expected 1000 lines, got %d", count)
 	}
 }
+
+// TestCloudStorageGzipped tests that cloud storage files with .gz extension are properly decompressed
+func TestCloudStorageGzipped(t *testing.T) {
+	// This test validates the composable reader architecture
+	// Cloud storage + gzip should work without a specific combined type
+	
+	content := `{"resourceType":"Patient","id":"1"}
+{"resourceType":"Patient","id":"2"}
+{"resourceType":"Patient","id":"3"}
+{"resourceType":"Patient","id":"4"}
+{"resourceType":"Patient","id":"5"}`
+
+	tmpDir := t.TempDir()
+	
+	// Create gzipped file
+	localGzFile := filepath.Join(tmpDir, "test-data.ndjson.gz")
+	f, err := os.Create(localGzFile)
+	if err != nil {
+		t.Fatalf("Failed to create gzipped file: %v", err)
+	}
+	gzWriter := gzip.NewWriter(f)
+	if _, err := gzWriter.Write([]byte(content)); err != nil {
+		f.Close()
+		t.Fatalf("Failed to write content: %v", err)
+	}
+	gzWriter.Close()
+	f.Close()
+
+	// Test with file:// URL that includes the full path
+	// For file:// URLs, the storage layer expects: file:///dir + filename
+	// We construct the full path as file:///dir/file.gz
+	fileURL := "file:///" + filepath.ToSlash(localGzFile)
+	
+	count, err := CountLines(fileURL)
+	if err != nil {
+		t.Fatalf("CountLines() error = %v", err)
+	}
+
+	if count != 5 {
+		t.Errorf("Expected 5 lines from gzipped cloud storage file, got %d", count)
+	}
+
+	t.Logf("Successfully counted %d lines from gzipped cloud storage file", count)
+}
