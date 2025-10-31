@@ -1,5 +1,5 @@
 
-# Implementation Plan: Job Coordinator Service
+# Implementation Plan: Job Driver Service
 
 **Branch**: `001-first-thing-we` | **Date**: 2025-10-03 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `C:\Users\Artne\Dev\dqme\specs\001-first-thing-we\spec.md`
@@ -32,7 +32,7 @@
 
 ## Summary
 
-The Job Coordinator service distributes quality measure calculation work across FHIR patient bundles by breaking down NDJSON files into batches and distributing work units to a queue. It processes one job per instance, tracks work unit completion, exposes REST endpoints for job control (/start, /pause, /cancel, /status), and supports multiple output destinations (GCP Pub/Sub, stdout, file). The service includes intelligent batch splitting based on line counts, manifest-based or auto-discovery file processing, and optional scale testing mode for load simulation.
+The Job Driver service distributes quality measure calculation work across FHIR patient bundles by breaking down NDJSON files into batches and distributing work units to a queue. It processes one job per instance, tracks work unit completion, exposes REST endpoints for job control (/start, /pause, /cancel, /status), and supports multiple output destinations (GCP Pub/Sub, stdout, file). The service includes intelligent batch splitting based on line counts, manifest-based or auto-discovery file processing, and optional scale testing mode for load simulation.
 
 ## Technical Context
 **Language/Version**: Go 1.21+ (latest stable)  
@@ -44,14 +44,14 @@ The Job Coordinator service distributes quality measure calculation work across 
 **Storage**: In-memory state (job status, work units); NDJSON files on disk; GCP Pub/Sub queue  
 **Testing**: Go testing framework (`testing` package), table-driven tests, testify/assert  
 **Target Platform**: Linux container (Cloud Run on GCP), Docker/OCI-compliant  
-**Project Type**: Single service (monorepo structure: `job-coordinator/`)  
+**Project Type**: Single service (monorepo structure: `job-driver/`)  
 **Performance Goals**: 
   - Process file manifests and split batches concurrently
   - Handle thousands of NDJSON files efficiently
   - Minimal memory footprint (stream file line counting, no full file loads)
   - REST API response times <100ms for status queries
 **Constraints**: 
-  - Single job per coordinator instance
+  - Single job per driver instance
   - No persistent storage (in-memory only)
   - Configurable TTL after completion (default 10 min) before shutdown
   - Must support GCP Pub/Sub, stdout, and file output modes
@@ -82,8 +82,8 @@ The Job Coordinator service distributes quality measure calculation work across 
 ### III. Reuse - Don't Reinvent
 
 - [x] Evaluated existing libraries/tools before custom implementation - Using Go stdlib, official GCP SDK
-- [x] Using established CQL engines (e.g., cql-engine, fhir-cql) if applicable - N/A: coordinator only distributes, doesn't execute CQL
-- [x] Using FHIR libraries (HAPI FHIR, Google FHIR SDK) for FHIR handling - N/A: coordinator reads files as opaque NDJSON lines
+- [x] Using established CQL engines (e.g., cql-engine, fhir-cql) if applicable - N/A: driver only distributes, doesn't execute CQL
+- [x] Using FHIR libraries (HAPI FHIR, Google FHIR SDK) for FHIR handling - N/A: driver reads files as opaque NDJSON lines
 - [x] Preferring GCP-native services over custom orchestration - Using Cloud Pub/Sub natively, deploying to Cloud Run
 - [x] Build vs. buy decision documented in ADRs if custom code required - Will document batch splitting algorithm choice
 
@@ -102,7 +102,7 @@ The Job Coordinator service distributes quality measure calculation work across 
 - [x] Measure results are clear, actionable, and auditable - Status endpoint shows progress, work unit tracking
 - [x] Error messages are human-readable with corrective actions - Config validation with helpful messages
 - [x] APIs have consistent, documented interfaces (OpenAPI specs) - REST API with OpenAPI spec
-- [x] Performance target: measure execution <30s for typical populations - N/A: coordinator only distributes work, doesn't execute measures
+- [x] Performance target: measure execution <30s for typical populations - N/A: driver only distributes work, doesn't execute measures
 
 **Developers**:
 
@@ -127,9 +127,9 @@ specs/001-first-thing-we/
 
 ### Source Code (repository root)
 ```
-job-coordinator/
+job-driver/
 ├── cmd/
-│   └── coordinator/
+│   └── driver/
 │       └── main.go          # Entry point, CLI setup
 ├── internal/
 │   ├── config/
@@ -149,8 +149,8 @@ job-coordinator/
 │   ├── api/
 │   │   ├── handlers.go      # REST API handlers
 │   │   └── router.go        # HTTP routing
-│   └── coordinator/
-│       └── coordinator.go   # Core coordination logic
+│   └── driver/
+│       └── driver.go   # Core coordination logic
 ├── pkg/
 │   └── (shared utilities if needed)
 ├── test/
@@ -172,7 +172,7 @@ job-coordinator/
 └── README.md
 ```
 
-**Structure Decision**: Single Go service in monorepo under `job-coordinator/` directory. 
+**Structure Decision**: Single Go service in monorepo under `job-driver/` directory. 
 Following standard Go project layout with `cmd/` for entry points, `internal/` for private 
 packages, and `test/` for integration tests. This structure supports clean separation of 
 concerns: config, models, processing logic, distribution strategies, and API handling.
@@ -287,9 +287,9 @@ concerns: config, models, processing logic, distribution strategies, and API han
    - Unit test: measures/measures_folder_path mutual exclusion [P]
    - Unit test: config state-based validation [P]
 
-7. **Core Coordinator Logic**:
-   - Main coordinator → `internal/coordinator/coordinator.go`
-   - Entry point → `cmd/coordinator/main.go`
+7. **Core driver Logic**:
+   - Main driver → `internal/driver/coordinator.go`
+   - Entry point → `cmd/driver/main.go`
    - Graceful shutdown logic
 
 **Ordering Strategy**:
@@ -311,11 +311,11 @@ concerns: config, models, processing logic, distribution strategies, and API han
 2. Config management
 3. File processor + batch splitter
 4. Distributors (all parallel) [P]
-5. Coordinator logic (depends on 1-4)
+5. driver logic (depends on 1-4)
 6. API handlers (depends on 5)
 7. Main entry point (depends on all)
 
-**Phase 3.4 - Integration** (Sequential on coordinator):
+**Phase 3.4 - Integration** (Sequential on driver):
 - Wire up all components in coordinator
 - Add graceful shutdown
 - Implement TTL timer
@@ -337,7 +337,7 @@ concerns: config, models, processing logic, distribution strategies, and API han
 - Most unit tests (batch splitting, line counting, config validation)
 
 **Critical Path**:
-- Models → Coordinator → API → Integration Tests
+- Models → driver → API → Integration Tests
 
 **IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
 

@@ -1,6 +1,6 @@
-# Data Model: Job Coordinator Service
+# Data Model: Job Driver Service
 
-**Feature**: Job Coordinator Service  
+**Feature**: Job Driver Service  
 **Date**: 2025-10-03  
 **Status**: Complete
 
@@ -289,7 +289,7 @@ API response for /job/status endpoint.
          ▼
 ┌─────────────────┐         ┌──────────────────┐
 │      Job        │────────▶│   WorkUnit       │
-│  (coordinator)  │   1:N   │  (work items)    │
+│  (driver)  │   1:N   │  (work items)    │
 └─────────────────┘         └──────────────────┘
          │
          │ uses
@@ -362,7 +362,7 @@ API response for /job/status endpoint.
 
 **Concurrent Access Patterns**:
 - Multiple goroutines reading Job status (read lock)
-- Single coordinator goroutine updating Job status (write lock)
+- Single driver goroutine updating Job status (write lock)
 - Worker pool goroutines updating WorkUnit status (per-unit locks)
 - API handlers reading Job status (read lock)
 
@@ -378,13 +378,13 @@ API response for /job/status endpoint.
 
 **Phase 1** (Current):
 - All data in-memory (no database)
-- Data lost on coordinator shutdown
-- Acceptable: short-lived coordinator instances, work distribution is idempotent
+- Data lost on driver shutdown
+- Acceptable: short-lived driver instances, work distribution is idempotent
 
 **Phase 2** (Future):
 - Persist Job and WorkUnit state to Firestore
 - Enable long-term job history queries
-- Support coordinator restarts without losing state
+- Support driver restarts without losing state
 - Allow separate status query service
 
 ---

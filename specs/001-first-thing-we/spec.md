@@ -1,9 +1,9 @@
-# Feature Specification: Job Coordinator Service
+# Feature Specification: Job Driver Service
 
 **Feature Branch**: `001-first-thing-we`  
 **Created**: 2025-10-02  
 **Status**: Draft  
-**Input**: User description: "first thing we are going to build is a job-coordinator service. we are creating the spec for that code only right now. it will take input params and distribute work on a queue for a scaling job to read and then wait for job completion to report status to the caller."
+**Input**: User description: "first thing we are going to build is a job-driver service. we are creating the spec for that code only right now. it will take input params and distribute work on a queue for a scaling job to read and then wait for job completion to report status to the caller."
 
 ---
 
@@ -18,13 +18,13 @@
 
 ### Primary User Story
 
-A system or user needs to process a large batch of quality measure calculations against patient FHIR bundles. Rather than processing everything synchronously (which could timeout or overwhelm resources), they submit a job request to the Job Coordinator service. The Job Coordinator accepts the request, breaks down the work into smaller units, distributes these units to worker processes via a queue, monitors progress, and returns the final status when all work completes.
+A system or user needs to process a large batch of quality measure calculations against patient FHIR bundles. Rather than processing everything synchronously (which could timeout or overwhelm resources), they submit a job request to the Job Driver service. The Job Driver accepts the request, breaks down the work into smaller units, distributes these units to worker processes via a queue, monitors progress, and returns the final status when all work completes.
 
 ### Acceptance Scenarios
 
-1. **Given** a valid job request with input parameters, **When** submitted to the Job Coordinator, **Then** the service MUST accept the request, assign a unique job ID, distribute work units to the queue, and return the job ID immediately
+1. **Given** a valid job request with input parameters, **When** submitted to the Job Driver, **Then** the service MUST accept the request, assign a unique job ID, distribute work units to the queue, and return the job ID immediately
 
-2. **Given** a job has been submitted and work distributed, **When** workers process the queue items, **Then** the Job Coordinator MUST track completion status of each work unit
+2. **Given** a job has been submitted and work distributed, **When** workers process the queue items, **Then** the Job Driver MUST track completion status of each work unit
 
 3. **Given** all work units for a job have completed successfully, **When** the caller queries job status, **Then** the service MUST return "completed" status with summary results
 
@@ -47,10 +47,10 @@ A system or user needs to process a large batch of quality measure calculations 
   - Job MUST continue processing independently; caller can reconnect and query status using job ID
 
 - What happens when multiple identical job requests are submitted?
-  - System processes one job per coordinator instance; duplicate submissions would require separate coordinator instances
+  - System processes one job per driver instance; duplicate submissions would require separate driver instances
 
 - What happens to job status data after completion?
-  - Coordinator keeps status in memory for configurable period (default 10 minutes) after job completion, then shuts down
+  - driver keeps status in memory for configurable period (default 10 minutes) after job completion, then shuts down
 
 ## Requirements *(mandatory)*
 
@@ -78,11 +78,11 @@ A system or user needs to process a large batch of quality measure calculations 
 
 - **FR-011**: System MUST support asynchronous operation - job submission returns immediately with job ID, not blocking until completion
 
-- **FR-012**: System MUST process one job per coordinator instance; concurrent job handling requires multiple coordinator instances
+- **FR-012**: System MUST process one job per driver instance; concurrent job handling requires multiple driver instances
 
 - **FR-013**: System MUST support concurrent processing of work units within a single job via distributed queue
 
-- **FR-014**: System MUST delegate work unit execution to external executors that consume from the distributed queue; coordinator does not retry failed work units
+- **FR-014**: System MUST delegate work unit execution to external executors that consume from the distributed queue; driver does not retry failed work units
 
 - **FR-015**: System MUST support configurable job sizes with no hard limits on work units per job or total payload size
 
@@ -135,13 +135,13 @@ A system or user needs to process a large batch of quality measure calculations 
 
 The following key architectural decisions were made during specification:
 
-1. **Single Job Per Instance**: Each coordinator instance processes one job. Multiple jobs require multiple coordinator instances. Job ID can be provided via environment variable or auto-generated.
+1. **Single Job Per Instance**: Each driver instance processes one job. Multiple jobs require multiple driver instances. Job ID can be provided via environment variable or auto-generated.
 
-2. **In-Memory Status with TTL**: Job status is kept in memory for a configurable period (default 10 minutes) after completion, then coordinator shuts down. Future enhancement will persist status to metadata database.
+2. **In-Memory Status with TTL**: Job status is kept in memory for a configurable period (default 10 minutes) after completion, then driver shuts down. Future enhancement will persist status to metadata database.
 
-3. **Distributed Queue Model**: Work units are distributed to a queue for external executor services to process. Coordinator does not execute work itself.
+3. **Distributed Queue Model**: Work units are distributed to a queue for external executor services to process. driver does not execute work itself.
 
-4. **No Retry Logic in Coordinator**: Failed work units are not retried by coordinator; retry logic is delegated to executor services consuming from the queue.
+4. **No Retry Logic in driver**: Failed work units are not retried by driver; retry logic is delegated to executor services consuming from the queue.
 
 5. **Configurable Limits**: No hard limits on job size or work unit count; limits are configurable based on deployment needs.
 

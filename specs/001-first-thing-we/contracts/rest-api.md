@@ -1,4 +1,4 @@
-# REST API Contract: Job Coordinator
+# REST API Contract: Job Driver
 
 **Version**: 1.0.0  
 **Base Path**: `/`  
@@ -193,7 +193,7 @@ All error responses follow this format:
 
 ### GET /health
 
-Check if coordinator is running.
+Check if driver is running.
 
 **Request**:
 ```http
@@ -360,13 +360,13 @@ Invalid transitions return `400 Bad Request`.
 Test scenarios to validate API compliance:
 
 1. **Happy Path - Auto Start**:
-   - Coordinator starts with `auto_start=true`
+   - driver starts with `auto_start=true`
    - GET /job/status returns `running`
    - Wait for completion
    - GET /job/status returns `completed` with TTL
 
 2. **Happy Path - Manual Start**:
-   - Coordinator starts with `auto_start=false`
+   - driver starts with `auto_start=false`
    - GET /job/status returns `pending`
    - POST /job/start
    - GET /job/status returns `running`
@@ -384,7 +384,7 @@ Test scenarios to validate API compliance:
    - Start job
    - PUT /job/cancel
    - GET /job/status returns `cancelled`
-   - Verify coordinator shuts down
+   - Verify driver shuts down
 
 5. **Invalid Transitions**:
    - Complete job
@@ -403,7 +403,7 @@ Test scenarios to validate API compliance:
    - Verify all config fields returned correctly
 
 8. **Pre-Start Configuration Update**:
-   - Start coordinator with `auto_start=false`
+   - Start driver with `auto_start=false`
    - GET /config to verify initial settings
    - PUT /config with `{"batch_size": 0}` (whole-file mode)
    - Verify 200 OK response

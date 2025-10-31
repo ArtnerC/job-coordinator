@@ -1,6 +1,6 @@
-# Quickstart Guide: Job Coordinator Service
+# Quickstart Guide: Job Driver Service
 
-**Purpose**: Step-by-step guide to build, run, and test the job coordinator locally
+**Purpose**: Step-by-step guide to build, run, and test the Job Driver locally
 
 ## Prerequisites
 
@@ -17,9 +17,9 @@
 ### 1. Clone and Build
 
 ```bash
-cd job-coordinator
+cd job-driver
 go mod download
-go build -o bin/coordinator ./cmd/coordinator
+go build -o bin/driver ./cmd/coordinator
 ```
 
 ### 2. Prepare Test Data
@@ -40,7 +40,7 @@ echo '{"resourceType":"Measure","id":"cms-125","title":"Breast Cancer Screening"
 ### 3. Run with Stdout (easiest)
 
 ```bash
-./bin/coordinator \
+./bin/driver \
   --job-id=test-job-001 \
   --batch-size=20 \
   --base-path=$(pwd)/testdata/bundles \
@@ -96,7 +96,7 @@ Command line flags > Environment variables > Defaults
 **Use Case**: Quick testing without GCP dependencies
 
 ```bash
-./bin/coordinator \
+./bin/driver \
   --batch-size=100 \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
@@ -132,7 +132,7 @@ gcloud pubsub subscriptions create work-queue-sub --topic=work-queue
 
 **Run**:
 ```bash
-./bin/coordinator \
+./bin/driver \
   --batch-size=500 \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
@@ -158,8 +158,8 @@ gcloud pubsub subscriptions pull work-queue-sub --limit=1
 
 **Run**:
 ```bash
-# Start coordinator in background (auto-start=false)
-./bin/coordinator \
+# Start driver in background (auto-start=false)
+./bin/driver \
   --auto-start=false \
   --batch-size=500 \
   --base-path=/data/bundles \
@@ -190,8 +190,8 @@ curl -X POST http://localhost:8080/job/start
 # Cancel job (cleanup)
 curl -X PUT http://localhost:8080/job/cancel
 
-# Coordinator will shutdown
-wait $COORDINATOR_PID
+# driver will shutdown
+wait $driver_PID
 ```
 
 ---
@@ -214,7 +214,7 @@ EOF
 
 **Run**:
 ```bash
-./bin/coordinator \
+./bin/driver \
   --base-path=/data/bundles \
   --manifest-path=manifest.txt \
   --measures-path=/data/measures \
@@ -229,7 +229,7 @@ EOF
 
 ```bash
 # Generate 100K work units from available data
-./bin/coordinator \
+./bin/driver \
   --batch-size=500 \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
@@ -239,7 +239,7 @@ EOF
   --scale-test-count=100000
 ```
 
-**Note**: If actual data has fewer than 100K lines, coordinator will cycle through files to reach target count.
+**Note**: If actual data has fewer than 100K lines, driver will cycle through files to reach target count.
 
 ---
 
@@ -249,7 +249,7 @@ EOF
 
 **Run**:
 ```bash
-./bin/coordinator \
+./bin/driver \
   --batch-size=500 \
   --base-path=/data/bundles \
   --measures-path=/data/measures/2023/q4 \
@@ -287,7 +287,7 @@ EOF
 
 **Run**:
 ```bash
-./bin/coordinator \
+./bin/driver \
   --batch-size=0 \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
@@ -324,7 +324,7 @@ EOF
 
 **Start with Auto-Start Disabled**:
 ```bash
-./bin/coordinator \
+./bin/driver \
   --auto-start=false \
   --batch-size=500 \
   --base-path=/data/bundles \
@@ -387,7 +387,7 @@ curl -X PUT http://localhost:8080/config \
 **Cleanup**:
 ```bash
 curl -X PUT http://localhost:8080/job/cancel
-wait $COORDINATOR_PID
+wait $driver_PID
 ```
 
 ---
@@ -435,7 +435,7 @@ go test -v -run TestWorkUnitSchema
 
 ```bash
 # Multi-stage build for small image
-docker build -t job-coordinator:latest -f deployments/docker/Dockerfile .
+docker build -t job-driver:latest -f deployments/docker/Dockerfile .
 ```
 
 ### Run Container
@@ -444,7 +444,7 @@ docker build -t job-coordinator:latest -f deployments/docker/Dockerfile .
 # Stdout mode
 docker run --rm \
   -v $(pwd)/testdata:/data \
-  job-coordinator:latest \
+  job-driver:latest \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
   --distributor=stdout
@@ -453,7 +453,7 @@ docker run --rm \
 docker run --rm \
   -v $(pwd)/testdata:/data \
   -v ~/.config/gcloud:/root/.config/gcloud \
-  job-coordinator:latest \
+  job-driver:latest \
   --base-path=/data/bundles \
   --measures-path=/data/measures \
   --distributor=pubsub \
@@ -481,18 +481,18 @@ gcloud services enable artifactregistry.googleapis.com
 
 ```bash
 # Tag for Artifact Registry
-docker tag job-coordinator:latest \
-  us-central1-docker.pkg.dev/my-project/dqme/job-coordinator:latest
+docker tag job-driver:latest \
+  us-central1-docker.pkg.dev/my-project/dqme/job-driver:latest
 
 # Push to registry
-docker push us-central1-docker.pkg.dev/my-project/dqme/job-coordinator:latest
+docker push us-central1-docker.pkg.dev/my-project/dqme/job-driver:latest
 ```
 
 ### Deploy to Cloud Run
 
 ```bash
-gcloud run deploy job-coordinator \
-  --image=us-central1-docker.pkg.dev/my-project/dqme/job-coordinator:latest \
+gcloud run deploy job-driver \
+  --image=us-central1-docker.pkg.dev/my-project/dqme/job-driver:latest \
   --platform=managed \
   --region=us-central1 \
   --set-env-vars="BATCH_SIZE=500,DISTRIBUTOR=pubsub,PUBSUB_PROJECT_ID=my-project,PUBSUB_TOPIC_ID=work-queue" \
@@ -528,7 +528,7 @@ ls -la /path/to/bundles/*.ndjson
 - Lower value (e.g., 0.1): More likely to append to last batch
 - Higher value (e.g., 0.3): More likely to create new batch
 
-### Issue: "Coordinator shuts down immediately"
+### Issue: "driver shuts down immediately"
 
 **Solution**: Check `--completion-ttl` setting. Increase if need more time to query status.
 
@@ -548,10 +548,10 @@ ls -la /path/to/bundles/*.ndjson
 
 ```bash
 # Minimal local run
-./coordinator --base-path=/data/bundles --measures-path=/data/measures
+./driver --base-path=/data/bundles --measures-path=/data/measures
 
 # Full configuration
-./coordinator \
+./driver \
   --job-id=job-123 \
   --batch-size=500 \
   --base-path=/data/bundles \

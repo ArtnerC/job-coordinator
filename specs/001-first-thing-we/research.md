@@ -1,6 +1,6 @@
-# Research: Job Coordinator Service
+# Research: Job Driver Service
 
-**Feature**: Job Coordinator Service  
+**Feature**: Job Driver Service  
 **Date**: 2025-10-03  
 **Status**: Complete
 
@@ -122,7 +122,7 @@ func countLines(filePath string) (int, error) {
 - `gorilla/mux` adds route variables, middleware support
 - No heavy framework overhead (not needed for 4 endpoints)
 - Easy to test with `httptest` package
-- Fast startup time (critical for short-lived coordinator instances)
+- Fast startup time (critical for short-lived driver instances)
 
 **API Design**:
 ```
@@ -212,7 +212,7 @@ wg.Wait()
 
 **Pub/Sub Consideration**: 
 - Queue exhaustion is hard to detect reliably in real-time
-- Better approach: Coordinator tracks expected work unit count, external executors report progress
+- Better approach: driver tracks expected work unit count, external executors report progress
 - Phase 2 decision: Add work completion reporting via separate channel or status DB
 
 ---
@@ -277,7 +277,7 @@ patients/2023/feb/bundle-003.ndjson
 - Optional measures manifest: list specific measures to include
 - If no manifest: list all files in measures path
 - Each work unit includes full list of applicable measures
-- Measures are opaque to coordinator (just file paths to pass along)
+- Measures are opaque to driver (just file paths to pass along)
 
 **Future Enhancement**: Support measure filtering/selection per work unit
 
@@ -332,10 +332,10 @@ patients/2023/feb/bundle-003.ndjson
 
 ## Open Questions / Future Enhancements
 
-1. **Work Unit Completion Tracking**: How do executors report completion back to coordinator?
+1. **Work Unit Completion Tracking**: How do executors report completion back to driver?
    - Phase 2: Consider separate status queue or shared state store
    
-2. **Retries**: Should coordinator track and retry failed work units?
+2. **Retries**: Should driver track and retry failed work units?
    - Current: No, delegated to executors
    - Future: Optional retry queue
 

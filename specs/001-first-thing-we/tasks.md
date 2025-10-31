@@ -1,6 +1,6 @@
-# Tasks: Job Coordinator Service
+# Tasks: Job Driver Service
 
-**Feature**: Job Coordinator Service  
+**Feature**: Job Driver Service  
 **Date**: 2025-01-21  
 **Status**: Complete (46/46 tasks - 100%)
 
@@ -14,47 +14,47 @@
 - ✅ T026: Viper-based config loading with CLI flags (commit 2ba494c)
 - ✅ T027-T031: File processing implementations (line counter, batch splitter, manifest, measures, file discovery)
 - ✅ T032-T035: Distributors (pubsub, stdout, file) with factory
-- ✅ T036: Coordinator orchestration (commit bd3a33b)
+- ✅ T036: driver orchestration (commit bd3a33b)
 - ✅ T037: TTL-based shutdown (commit 2e58b1c)
 - ✅ T038: REST API handlers (commit 9cfa66f)
 - ✅ T039: Main entry point (commit 45bde68)
 - ✅ T040-T043: Integration wiring complete (implemented in T037-T039)
 - ✅ T044-T046: Polish (unit tests, E2E, documentation) - Complete
 
-**Final Status**: 180 tests passing (65 coordinator/API unit tests + 71 processor unit tests + 38 integration tests + 6 E2E tests), coordinator binary compiles and runs, 5 comprehensive documentation files created, **100% COMPLETE**
+**Final Status**: 180 tests passing (65 driver/API unit tests + 71 processor unit tests + 38 integration tests + 6 E2E tests), driver binary compiles and runs, 5 comprehensive documentation files created, **100% COMPLETE**
 
 ## Task List
 
 ### Phase 3.1: Project Setup
 
 **T001** [P] Initialize Go module and project structure
-- Run `go mod init github.com/dqme/job-coordinator`
+- Run `go mod init github.com/dqme/job-driver`
 - Create directory structure:
-  - `job-coordinator/cmd/coordinator/` (main entry point)
-  - `job-coordinator/internal/models/` (data models)
-  - `job-coordinator/internal/config/` (configuration management)
-  - `job-coordinator/internal/api/` (REST API handlers + routing)
-  - `job-coordinator/internal/distributor/` (Pub/Sub, stdout, file distributors)
-  - `job-coordinator/internal/processor/` (file processing, batch splitting)
-  - `job-coordinator/internal/coordinator/` (job orchestration)
-  - `job-coordinator/test/integration/` (integration tests)
-  - `job-coordinator/testdata/bundles/` (sample NDJSON bundles)
-  - `job-coordinator/testdata/measures/` (sample measure definitions)
+  - `job-driver/cmd/driver/` (main entry point)
+  - `job-driver/internal/models/` (data models)
+  - `job-driver/internal/config/` (configuration management)
+  - `job-driver/internal/api/` (REST API handlers + routing)
+  - `job-driver/internal/distributor/` (Pub/Sub, stdout, file distributors)
+  - `job-driver/internal/processor/` (file processing, batch splitting)
+  - `job-driver/internal/driver/` (job orchestration)
+  - `job-driver/test/integration/` (integration tests)
+  - `job-driver/testdata/bundles/` (sample NDJSON bundles)
+  - `job-driver/testdata/measures/` (sample measure definitions)
 - Create `.gitignore` with Go patterns
 - **Dependencies**: None
 - **Artifacts**: Go module initialized, directory structure created
 
 **T002** [P] Create Dockerfile with multi-stage build
-- Create `job-coordinator/deployments/docker/Dockerfile`
+- Create `job-driver/deployments/docker/Dockerfile`
 - Stage 1: Build Go binary with `golang:1.21-alpine`
 - Stage 2: Runtime with `alpine:latest`, copy binary
-- Set `ENTRYPOINT ["/coordinator"]`
+- Set `ENTRYPOINT ["/driver"]`
 - Optimize for small image size (<20MB)
 - **Dependencies**: T001
 - **Artifacts**: `deployments/docker/Dockerfile`
 
 **T003** [P] Create Terraform infrastructure configuration
-- Create `job-coordinator/deployments/terraform/main.tf`
+- Create `job-driver/deployments/terraform/main.tf`
 - Define Pub/Sub topic resource
 - Define Cloud Run service resource
 - Define IAM roles for Pub/Sub publishing
@@ -77,7 +77,7 @@
   - Start paused job → 200 OK, status=running
   - Start already running job → 400 Bad Request
   - Start completed job → 400 Bad Request
-- Mock coordinator with in-memory job state
+- Mock driver with in-memory job state
 - **Dependencies**: T001
 - **Artifacts**: `test/integration/rest_api_contract_test.go` (TestStartJobEndpoint)
 
@@ -88,7 +88,7 @@
   - Pause pending job → 400 Bad Request
   - Pause paused job → 400 Bad Request
   - Pause completed job → 400 Bad Request
-- Mock coordinator state transitions
+- Mock driver state transitions
 - **Dependencies**: T001
 - **Artifacts**: `test/integration/rest_api_contract_test.go` (TestPauseJobEndpoint)
 
@@ -418,11 +418,11 @@
 - **Dependencies**: T032, T033, T034
 - **Artifacts**: `internal/distributor/factory.go`
 
-#### Job Coordinator
+#### Job Driver
 
-**T036** Implement coordinator orchestration logic
-- File: `internal/coordinator/coordinator.go`
-- Implement Coordinator struct with Job and JobConfig fields
+**T036** Implement driver orchestration logic
+- File: `internal/driver/coordinator.go`
+- Implement driver struct with Job and JobConfig fields
 - Implement ProcessJob() method:
   - Discover files (via manifest or auto-discovery)
   - Discover measures (via manifest or auto-discovery)
@@ -434,10 +434,10 @@
 - Implement Pause(), Resume(), Cancel() methods
 - Implement state transition validation
 - **Dependencies**: T021, T027, T028, T031, T035
-- **Artifacts**: `internal/coordinator/coordinator.go`
+- **Artifacts**: `internal/driver/coordinator.go`
 
 **T037** Implement TTL-based shutdown logic
-- File: `internal/coordinator/ttl.go`
+- File: `internal/driver/ttl.go`
 - Start TTL timer after job completion
 - Use context.WithCancel for graceful shutdown
 - On TTL expiry: signal shutdown to main
@@ -445,7 +445,7 @@
 - Drain in-flight API requests (5s timeout)
 - Close distributor gracefully
 - **Dependencies**: T036
-- **Artifacts**: `internal/coordinator/ttl.go`
+- **Artifacts**: `internal/driver/ttl.go`
 
 #### REST API
 
@@ -470,28 +470,28 @@
 - **Artifacts**: `internal/api/handlers.go`, `internal/api/config_handlers.go`, `internal/api/router.go`
 
 **T039** Implement main entry point
-- File: `cmd/coordinator/main.go`
+- File: `cmd/driver/main.go`
 - Load configuration (CLI args + env vars)
-- Initialize coordinator with job config
+- Initialize driver with job config
 - Start REST API server (goroutine)
 - If auto_start=true: start job immediately
 - Wait for shutdown signal (TTL or SIGTERM)
 - Graceful shutdown sequence
 - **Dependencies**: T026, T036, T037, T038
-- **Artifacts**: `cmd/coordinator/main.go`
+- **Artifacts**: `cmd/driver/main.go`
 
 ---
 
 ### Phase 3.4: Integration
 
 **T040** Wire all components together
-- Update `cmd/coordinator/main.go` to initialize all components
-- Coordinator → Distributor factory → Specific distributor
-- API handlers → Coordinator references
+- Update `cmd/driver/main.go` to initialize all components
+- driver → Distributor factory → Specific distributor
+- API handlers → driver references
 - Config → All components
 - Error propagation end-to-end
 - **Dependencies**: T039
-- **Artifacts**: Updated `cmd/coordinator/main.go`
+- **Artifacts**: Updated `cmd/driver/main.go`
 
 **T041** Implement graceful shutdown sequence
 - Handle SIGTERM/SIGINT signals
@@ -501,7 +501,7 @@
 - Close API server
 - Exit cleanly
 - **Dependencies**: T037, T040
-- **Artifacts**: Updated `cmd/coordinator/main.go`, `internal/coordinator/shutdown.go`
+- **Artifacts**: Updated `cmd/driver/main.go`, `internal/driver/shutdown.go`
 
 **T042** Implement TTL timer and completion detection
 - After job status → completed: start TTL timer
@@ -509,7 +509,7 @@
 - On TTL expiry: trigger graceful shutdown
 - Update /job/status to show ttl_remaining
 - **Dependencies**: T037, T040
-- **Artifacts**: Updated `internal/coordinator/ttl.go`
+- **Artifacts**: Updated `internal/driver/ttl.go`
 
 **T043** Start API server with proper lifecycle
 - Start HTTP server in goroutine
@@ -528,7 +528,7 @@
 - `internal/models/`: All model validation logic
 - `internal/processor/`: File discovery, line counting, batch splitting, manifest parsing
 - `internal/distributor/`: Each distributor (with mocks for GCP SDK)
-- `internal/coordinator/`: Job orchestration, state transitions
+- `internal/driver/`: Job orchestration, state transitions
 - `internal/api/`: Handler logic (with httptest)
 - Target 80%+ code coverage
 - **Dependencies**: T021-T043
@@ -566,7 +566,7 @@
 
 **Critical Path** (sequential dependencies, no parallelization):
 ```
-T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T036 (coordinator) → T038 (API) → T039 (main) → T040 (integration) → T045 (E2E tests)
+T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T036 (driver) → T038 (API) → T039 (main) → T040 (integration) → T045 (E2E tests)
 ```
 
 **Parallel Groups**:
@@ -621,7 +621,7 @@ T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T0
 - Developer C: T032-T034 (distributors)
 
 **Week 3: Coordination + API**
-- Developer A: T036-T037 (coordinator + TTL)
+- Developer A: T036-T037 (driver + TTL)
 - Developer B: T038-T039 (API + main)
 
 **Week 4: Integration + Polish**
@@ -665,7 +665,7 @@ T001 → T004-T020 (TDD tests MUST complete first) → T021-T025 (models) → T0
 - Zero known issues
 
 **Key Commits**:
-- 852680c: T044 comprehensive unit tests (coordinator + API)
+- 852680c: T044 comprehensive unit tests (driver + API)
 - d52bdbc: T045 E2E integration tests
 - 1fa0ac7: T046 complete documentation suite
 

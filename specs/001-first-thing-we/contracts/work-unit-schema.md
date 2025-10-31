@@ -188,7 +188,7 @@ Work units are serialized as JSON and sent to the configured distribution destin
 
 **Destination**: Standard output (stdout)  
 **Format**: One JSON object per line (NDJSON format)  
-**Usage**: Pipe coordinator output to downstream processor
+**Usage**: Pipe driver output to downstream processor
 
 **Example Output**:
 ```
@@ -207,13 +207,13 @@ Work units are serialized as JSON and sent to the configured distribution destin
 **Shell Usage**:
 ```bash
 # Pipe to downstream processor
-./coordinator --distributor=stdout | ./executor
+./driver --distributor=stdout | ./executor
 
 # Save to file for later processing
-./coordinator --distributor=stdout > work-units.ndjson
+./driver --distributor=stdout > work-units.ndjson
 
 # Split across multiple executors
-./coordinator --distributor=stdout | tee >(./executor1) >(./executor2)
+./driver --distributor=stdout | tee >(./executor1) >(./executor2)
 ```
 
 ---
@@ -237,7 +237,7 @@ Work units are serialized as JSON and sent to the configured distribution destin
 - Read file line by line
 - Parse each line as JSON WorkUnit
 - Process work unit
-- Track progress separately (coordinator doesn't monitor file consumption)
+- Track progress separately (driver doesn't monitor file consumption)
 
 ---
 
@@ -288,7 +288,7 @@ Executors consuming work units MUST:
    - Invalid JSON: Skip line, log error
    - Missing file: Fail work unit, report error
    - Measure execution error: Log error, continue to next patient
-   - Critical errors: Fail work unit, report to coordinator (future)
+   - Critical errors: Fail work unit, report to driver (future)
 
 ---
 
