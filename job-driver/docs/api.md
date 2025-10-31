@@ -1,6 +1,6 @@
 # REST API Documentation
 
-The Job Coordinator exposes a REST API for job control and monitoring. All responses are JSON.
+The Job Driver exposes a REST API for job control and monitoring. All responses are JSON.
 
 ## Base URL
 
@@ -158,21 +158,24 @@ GET /config HTTP/1.1
 ```json
 {
   "job_id": "my-job-123",
-  "batch_size": 500,
+  "auto_start": false,
+  "batch_size": 0,
+  "multifile_batches": true,
   "remainder_threshold": 0.2,
-  "base_path": "C:\\data\\bundles",
-  "manifest_path": "",
-  "measures_path": "",
+  "base_path": "/data/bundles",
+  "manifest_path": null,
+  "measures_path": "./measures",
   "measures_to_run": [
     "/measures/measure1.json",
     "/measures/measure2.json"
   ],
-  "measures_manifest_path": "",
-  "use_measures_path": false,
+  "measures_manifest_path": null,
   "distributor_type": "stdout",
+  "distributor_config": {},
   "completion_ttl": "10m0s",
   "concurrent_file_processors": 10,
-  "status": "running"
+  "scale_load": null,
+  "api_port": 8080
 }
 ```
 
@@ -188,10 +191,8 @@ PUT /config HTTP/1.1
 Content-Type: application/json
 
 {
-  "concurrent_file_processors": 20,
-  "distributor_config": {
-    "new_key": "new_value"
-  }
+  "batch_size": 1000,
+  "concurrent_file_processors": 20
 }
 ```
 
@@ -200,8 +201,8 @@ Content-Type: application/json
 {
   "message": "Configuration updated successfully",
   "updated_fields": [
-    "concurrent_file_processors",
-    "distributor_config"
+    "batch_size",
+    "concurrent_file_processors"
   ]
 }
 ```
@@ -209,22 +210,23 @@ Content-Type: application/json
 **Response (400 Bad Request)** - Non-modifiable fields:
 ```json
 {
-  "message": "Some fields cannot be modified at runtime",
-  "updated_fields": [],
-  "rejected_fields": [
-    "batch_size",
-    "base_path"
-  ],
-  "rejection_reason": "Fields are not runtime-modifiable"
+  "error": "field 'distributor_type' cannot be modified in state 'running'"
 }
 ```
 
-**Runtime-Modifiable Fields**:
-- `concurrent_file_processors`
-- `distributor_config`
+**Runtime-Modifiable Fields** (in running/paused states):
+- `batch_size` - Adjust batch size for remaining files
+- `remainder_threshold` - Change threshold for remainder batches
+- `concurrent_file_processors` - Adjust worker pool size
+- `completion_ttl` - Update TTL (modifiable in any state including completed)
 
-**Non-Modifiable Fields** (after job start):
-- All other configuration fields
+**Pre-Start Only Fields** (modifiable only in pending state):
+- `distributor_type` - Cannot change distributor after job starts
+- `distributor_config` - Cannot change distributor settings after job starts
+- `measures_to_run` - Cannot change measures after job starts
+
+**Immutable Fields** (cannot be modified after initialization):
+- `job_id`, `base_path`, `manifest_path`, `measures_path`, `measures_manifest_path`, `auto_start`, `multifile_batches`, `scale_load`, `api_port`
 
 ---
 

@@ -1,28 +1,32 @@
-# Job Coordinator Service
+# Job Driver Service
 
-A Go-based service that coordinates the distribution of FHIR quality measure calculation work units across multiple workers. The coordinator splits large NDJSON bundles into batches and distributes them via Pub/Sub, stdout, or file outputs.
+A Go-based service that distributes FHIR quality measure calculation work across multiple workers. The driver processes NDJSON bundle files (plain or gzip-compressed) from cloud storage or local filesystems, splits them into batches, and distributes work units via Pub/Sub, stdout, or file outputs.
 
 ## Features
 
-- **Batch Processing**: Splits large FHIR bundle files into configurable batch sizes
+- **Batch Processing**: Flexible batch strategies - whole files, line-based batching, or multi-file batching
+- **Cloud Storage Support**: Read from Google Cloud Storage (gs://), Amazon S3 (s3://), or local filesystems (file://)
+- **Compression Support**: Automatic gzip decompression for .ndjson.gz files
+- **Large File Handling**: Supports FHIR bundles up to 10MB per line without buffer overflow
 - **Multiple Distributors**: Supports Google Cloud Pub/Sub, stdout, and file-based distribution
 - **REST API**: Control job execution and monitor progress via HTTP endpoints
 - **Flexible Configuration**: CLI flags, environment variables, and runtime updates
-- **Whole File Mode**: Process entire files without batching (batch_size=0)
 - **TTL-based Shutdown**: Automatic shutdown after job completion
 - **Graceful Shutdown**: Handles SIGTERM/SIGINT with proper cleanup
+- **Composable Architecture**: Modular design allows any combination of storage sources and encodings
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go 1.25.3 or later
 - (Optional) Google Cloud Pub/Sub for production deployments
+- (Optional) Cloud storage credentials (GCP service account, AWS access keys) if using cloud storage
 
 ### Installation
 
 ```bash
-go build -o coordinator ./cmd/coordinator
+go build -o driver ./cmd/driver
 ```
 
 ### Basic Usage
@@ -30,51 +34,55 @@ go build -o coordinator ./cmd/coordinator
 **Stdout Mode** (simplest - prints work units to console):
 
 ```bash
-./coordinator \
-  --job-id=my-job \
-  --base-path=C:\data\bundles \
-  --measures-to-run=/measures/measure1.json,/measures/measure2.json \
-  --batch-size=500 \
+./driver \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
   --distributor-type=stdout \
   --auto-start=true
 ```
 
-**File Mode** (writes work units to a file):
+**Line-Based Batching** (splits large files into batches):
 
 ```bash
-./coordinator \
-  --job-id=my-job \
-  --base-path=C:\data\bundles \
-  --measures-to-run=/measures/measure1.json \
+./driver \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
   --batch-size=1000 \
-  --distributor-type=file \
-  --distributor-config=output_path:C:\output\work-units.ndjson \
+  --distributor-type=stdout \
   --auto-start=true
 ```
 
-**Pub/Sub Mode** (production - distributes to GCP Pub/Sub):
+**Cloud Storage with Gzip** (reads from GCS with compression):
 
 ```bash
-./coordinator \
-  --job-id=my-job \
-  --base-path=/data/bundles \
-  --measures-to-run=/measures/measure1.json \
+./driver \
+  --base-path=gs://my-bucket/bundles \
+  --measures-path=/data/measures \
   --batch-size=500 \
   --distributor-type=pubsub \
-  --distributor-config=project_id:my-project,topic_id:work-units \
+  --distributor-config=project_id=my-project,topic_name=work-units \
+  --auto-start=true
+```
+
+**File Output Mode** (writes work units to a file):
+
+```bash
+./driver \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
+  --distributor-type=file \
+  --distributor-config=output_path=/output/work-units.ndjson \
   --auto-start=true
 ```
 
 ### API Usage
 
-Start the coordinator without auto-start to control it via API:
+Start the driver without auto-start to control it via API:
 
 ```bash
-./coordinator \
-  --job-id=api-controlled-job \
-  --base-path=C:\data\bundles \
-  --measures-to-run=/measures/measure1.json \
-  --batch-size=500 \
+./driver \
+  --base-path=/data/bundles \
+  --measures-path=/data/measures \
   --distributor-type=stdout \
   --api-port=8080
 ```
@@ -100,24 +108,27 @@ curl http://localhost:8080/health
 
 ## Architecture
 
-The coordinator follows this workflow:
+The driver follows this workflow:
 
-1. **Initialization**: Load configuration, create distributor
-2. **Discovery**: Find FHIR bundle files (auto-discovery or manifest)
+1. **Initialization**: Load configuration, create distributor, open cloud storage connections
+2. **Discovery**: Find FHIR bundle files (auto-discovery or manifest), discover measures
 3. **Processing**: For each file:
-   - Count lines
-   - Split into batches based on batch_size
-   - Create work units (JSON objects with file path, line ranges, measures)
-4. **Distribution**: Send work units to configured distributor
-5. **Completion**: Track progress, handle errors, trigger TTL shutdown
+   - Open file (from cloud storage or local, with automatic gzip decompression)
+   - Count lines (handles up to 10MB per line)
+   - Split into batches based on batch_size and multifile_batches settings
+   - Create work units (JSON objects with file paths, line ranges, measures)
+4. **Distribution**: Send work units to configured distributor with batching/buffering
+5. **Completion**: Track progress, wait for distributor drain, trigger TTL shutdown
 
 ### Components
 
-- **Coordinator**: Orchestrates file processing and work unit distribution
-- **Processor**: Handles file discovery, line counting, batch splitting
-- **Distributor**: Sends work units to target (Pub/Sub, stdout, file)
-- **API**: REST endpoints for job control and monitoring
-- **Config**: Viper-based configuration with CLI/env/defaults
+- **Driver**: Orchestrates file processing and work unit distribution (internal/driver/)
+- **Processor**: Handles file discovery, line counting, batch splitting, composable file readers (internal/processor/)
+- **Storage**: Cloud storage abstraction via gocloud.dev (internal/storage/)
+- **Distributor**: Sends work units to target - Pub/Sub, stdout, or file (internal/distributor/)
+- **API**: REST endpoints for job control and monitoring (internal/api/)
+- **Config**: Viper-based configuration with CLI/env/defaults (internal/config/)
+- **Models**: Data structures for Job, WorkUnit, Config (internal/models/)
 
 ## Configuration
 
@@ -127,10 +138,12 @@ See [docs/configuration.md](docs/configuration.md) for complete configuration op
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `--job-id` | Unique job identifier | Required |
-| `--base-path` | Root directory for FHIR bundles | Required |
-| `--measures-to-run` | Comma-separated measure paths | Required |
-| `--batch-size` | Lines per batch (0=whole file) | 500 |
+| `--job-id` | Unique job identifier | Auto-generated UUID |
+| `--base-path` | Root directory for FHIR bundles (supports gs://, s3://, file://) | Required |
+| `--measures-path` | Directory containing measure definitions | ./measures |
+| `--measures-to-run` | Specific measure paths (optional) | [] (discovers all) |
+| `--batch-size` | Lines per batch (0=whole file) | 0 (whole file) |
+| `--multifile-batches` | Combine multiple files into batches | true |
 | `--distributor-type` | Output type: stdout, file, pubsub | stdout |
 | `--auto-start` | Start job immediately | false |
 | `--api-port` | REST API port | 8080 |
