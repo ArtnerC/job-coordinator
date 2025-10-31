@@ -23,11 +23,11 @@
    → If new violations: Refactor design, return to Phase 1
    → Update Progress Tracking: Post-Design Constitution Check
 8. Plan Phase 2 → Describe task generation approach (DO NOT create tasks.md)
-9. STOP - Ready for /tasks command
+9. STOP - Ready for /speckit.tasks command
 ```
 
-**IMPORTANT**: The /plan command STOPS at step 7. Phases 2-4 are executed by other commands:
-- Phase 2: /tasks command creates tasks.md
+**IMPORTANT**: The /speckit.plan command STOPS at step 7. Phases 2-4 are executed by other commands:
+- Phase 2: /speckit.tasks command creates tasks.md
 - Phase 3-4: Implementation execution (manual or via tools)
 
 ## Summary
@@ -232,7 +232,7 @@ concerns: config, models, processing logic, distribution strategies, and API han
 **Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
 
 ## Phase 2: Task Planning Approach
-*This section describes what the /tasks command will do - DO NOT execute during /plan*
+*This section describes what the /speckit.tasks command will do - DO NOT execute during/speckit.plan*
 
 **Task Generation Strategy**:
 
@@ -339,10 +339,10 @@ concerns: config, models, processing logic, distribution strategies, and API han
 **Critical Path**:
 - Models → driver → API → Integration Tests
 
-**IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
+**IMPORTANT**: This phase is executed by the /speckit.tasks command, NOT by /speckit.plan
 
 ## Phase 3+: Future Implementation
-*These phases are beyond the scope of the /plan command*
+*These phases are beyond the scope of the /speckit.plan command*
 
 **Phase 3**: Task execution (/tasks command creates tasks.md)  
 **Phase 4**: Implementation (execute tasks.md following constitutional principles)  
@@ -386,7 +386,7 @@ No constitutional violations identified. All design decisions align with DQME pr
 
 *Based on Constitution v1.0.0 - See `/.specify/memory/constitution.md`*
 
-**Ready for /tasks command to generate implementation tasks**
+**Ready for /speckit.tasks command to generate implementation tasks**
 - [ ] All NEEDS CLARIFICATION resolved
 - [ ] Complexity deviations documented
 
