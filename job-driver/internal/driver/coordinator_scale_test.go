@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dqme/job-driver/internal/config"
-	"github.com/dqme/job-driver/internal/distributor"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/config"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/distributor"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // TestScaleLoadProcessing tests that scale load mode generates the correct number of work units

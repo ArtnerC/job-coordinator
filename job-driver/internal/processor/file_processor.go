@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dqme/job-driver/internal/storage"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/storage"
 )
 
 // isGzipped checks if a file is gzipped based on its extension

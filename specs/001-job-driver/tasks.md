@@ -28,7 +28,7 @@
 ### Phase 3.1: Project Setup
 
 **T001** [P] Initialize Go module and project structure
-- Run `go mod init github.com/dqme/job-driver`
+- Run `go mod init github.com/cvs-health-source-code/digital-qme-system/job-driver`
 - Create directory structure:
   - `job-driver/cmd/driver/` (main entry point)
   - `job-driver/internal/models/` (data models)

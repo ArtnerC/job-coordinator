@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // TestStdoutDistributorStatus tests GetStatus for stdout distributor

@@ -10,7 +10,7 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	pubsubpb "cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 

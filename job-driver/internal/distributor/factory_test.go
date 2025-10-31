@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dqme/job-driver/internal/config"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/config"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 func TestNewDistributor(t *testing.T) {

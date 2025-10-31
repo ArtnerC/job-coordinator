@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dqme/job-driver/internal/config"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/config"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // DistributorStatus represents the completion status of a distributor

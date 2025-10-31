@@ -8,11 +8,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/dqme/job-driver/internal/api"
-	"github.com/dqme/job-driver/internal/config"
-	"github.com/dqme/job-driver/internal/driver"
-	"github.com/dqme/job-driver/internal/distributor"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/api"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/config"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/driver"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/distributor"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 	"github.com/google/uuid"
 )
 

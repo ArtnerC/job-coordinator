@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/dqme/job-driver/internal/config"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/config"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // GetConfigHandler handles GET /config

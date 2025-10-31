@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // T010: Test that work unit JSON schema includes all required fields

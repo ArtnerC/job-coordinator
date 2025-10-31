@@ -1,4 +1,4 @@
-module github.com/dqme/job-driver
+module github.com/cvs-health-source-code/digital-qme-system/job-driver
 
 go 1.25.3
 

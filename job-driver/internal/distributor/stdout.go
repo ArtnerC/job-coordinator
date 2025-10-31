@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // StdoutDistributor writes work units as NDJSON to stdout

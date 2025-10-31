@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/dqme/job-driver/internal/driver"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/driver"
 )
 
 // SetupRouter creates and configures the HTTP router with all handlers

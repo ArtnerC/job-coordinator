@@ -1,8 +1,8 @@
 
 # Implementation Plan: Job Driver Service
 
-**Branch**: `001-first-thing-we` | **Date**: 2025-10-03 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `C:\Users\Artne\Dev\dqme\specs\001-first-thing-we\spec.md`
+**Branch**: `001-job-driver` | **Date**: 2025-10-03 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `C:\Users\Artne\Dev\dqme\specs\001-job-driver\spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
@@ -116,7 +116,7 @@ The Job Driver service distributes quality measure calculation work across FHIR 
 
 ### Documentation (this feature)
 ```
-specs/001-first-thing-we/
+specs/001-job-driver/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output
 ├── data-model.md        # Phase 1 output

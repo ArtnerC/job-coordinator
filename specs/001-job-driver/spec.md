@@ -1,6 +1,6 @@
 # Feature Specification: Job Driver Service
 
-**Feature Branch**: `001-first-thing-we`  
+**Feature Branch**: `001-job-driver`  
 **Created**: 2025-10-02  
 **Status**: Draft  
 **Input**: User description: "first thing we are going to build is a job-driver service. we are creating the spec for that code only right now. it will take input params and distribute work on a queue for a scaling job to read and then wait for job completion to report status to the caller."

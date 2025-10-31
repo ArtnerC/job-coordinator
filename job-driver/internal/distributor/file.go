@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // FileDistributor writes work units as NDJSON to a file

@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dqme/job-driver/internal/driver"
-	"github.com/dqme/job-driver/internal/models"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/driver"
+	"github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/models"
 )
 
 // Handler holds the coordinator reference for API handlers
