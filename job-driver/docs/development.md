@@ -1,32 +1,41 @@
 # Development Guide
 
-This guide covers local development, testing, and building the Job Coordinator.
+This guide covers local development, testing, and building the Job Driver.
 
 ## Prerequisites
 
-- **Go 1.21+**: Install from [golang.org](https://golang.org/dl/)
+- **Go 1.25.3+**: Install from [golang.org](https://golang.org/dl/)
 - **Git**: For version control
 - **Optional**: Docker for containerized builds
+- **Optional**: Google Cloud SDK for GCS testing
+- **Optional**: AWS CLI for S3 testing
 
 ## Project Structure
 
 ```
-job-coordinator/
+job-driver/
 ├── cmd/
-│   └── coordinator/          # Main entry point
+│   └── driver/               # Main entry point
 │       └── main.go
 ├── internal/
 │   ├── api/                  # REST API handlers
-│   ├── config/               # Configuration management
-│   ├── coordinator/          # Job orchestration
+│   ├── config/               # Configuration management (Viper)
+│   ├── driver/               # Job orchestration
 │   ├── distributor/          # Work distribution (stdout, file, pubsub)
-│   ├── models/               # Data models
-│   └── processor/            # File processing logic
+│   ├── models/               # Data models (Job, WorkUnit, Config)
+│   ├── processor/            # File processing (discovery, counting, batching)
+│   └── storage/              # Cloud storage abstraction (gocloud.dev)
 ├── test/
 │   └── integration/          # E2E integration tests
+├── testdata/
+│   ├── bundles/              # Sample FHIR NDJSON files
+│   └── measures/             # Sample measure definitions
+├── deployments/
+│   ├── docker/               # Dockerfile
+│   └── terraform/            # Infrastructure as code
+├── docs/                     # Documentation
 ├── go.mod                    # Go module definition
 ├── go.sum                    # Dependency checksums
-├── Dockerfile                # Container build definition
 └── README.md                 # Project overview
 ```
 
@@ -35,8 +44,8 @@ job-coordinator/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/dqme/job-coordinator.git
-cd job-coordinator
+git clone https://github.com/cvs-health-source-code/digital-qme-system.git
+cd digital-qme-system/job-driver
 ```
 
 ### 2. Install Dependencies
@@ -50,10 +59,14 @@ This downloads all dependencies listed in `go.mod`.
 ### 3. Verify Setup
 
 ```bash
-go build -o coordinator.exe ./cmd/coordinator
+# Windows
+go build -o driver.exe ./cmd/driver
+
+# Linux/Mac
+go build -o driver ./cmd/driver
 ```
 
-If successful, you'll have a `coordinator.exe` binary.
+If successful, you'll have a `driver` (or `driver.exe`) binary.
 
 ## Running Tests
 
@@ -78,11 +91,14 @@ go test ./... -v
 ### Run Specific Package Tests
 
 ```bash
-# Test coordinator logic
-go test ./internal/coordinator -v
+# Test driver logic
+go test ./internal/driver -v
 
 # Test API handlers
 go test ./internal/api -v
+
+# Test file processor (includes cloud storage and gzip tests)
+go test ./internal/processor -v
 
 # Test E2E scenarios
 go test ./test/integration -v
@@ -91,7 +107,8 @@ go test ./test/integration -v
 ### Run Specific Test Function
 
 ```bash
-go test ./internal/coordinator -run TestCoordinatorStateTransitions -v
+go test ./internal/driver -run TestJobStateTransitions -v
+go test ./internal/processor -run TestCloudStorageGzipped -v
 ```
 
 ### Disable Test Caching
@@ -380,3 +397,5 @@ go test -bench . ./internal/processor
 - [Project README](../README.md)
 - [API Documentation](api.md)
 - [Configuration Guide](configuration.md)
+
+

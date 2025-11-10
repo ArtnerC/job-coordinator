@@ -1,6 +1,6 @@
 # Cloud Storage Integration Guide
 
-This guide shows how to integrate the new cloud storage support into the job coordinator.
+This guide shows how to use the cloud storage support in the job driver. The driver supports Google Cloud Storage (GCS), Amazon S3, and local filesystems through a unified API powered by [gocloud.dev](https://gocloud.dev).
 
 ## Quick Start
 
@@ -12,13 +12,17 @@ The storage package is already available and can be used with minimal changes to
 # Set credentials (if not using default)
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
-# Run with GCS path
-./coordinator \
+# Run with GCS path (supports gzip compression)
+./driver \
   --base-path=gs://my-bucket/fhir-bundles \
-  --measures-path=gs://my-bucket/measures \
+  --measures-path=/local/measures \
+  --batch-size=1000 \
   --distributor-type=pubsub \
-  --distributor-config=project_id=my-project,topic_name=work-units
+  --distributor-config=project_id=my-project,topic_name=work-units \
+  --auto-start=true
 ```
+
+Note: Files ending in `.ndjson.gz` are automatically decompressed using the composable multiCloser pattern.
 
 ### Example: Reading from S3
 
@@ -29,20 +33,33 @@ export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 # Run with S3 path
-./coordinator \
+./driver \
   --base-path=s3://my-bucket/fhir-bundles \
-  --measures-path=s3://my-bucket/measures \
-  --distributor-type=pubsub
+  --measures-path=/local/measures \
+  --distributor-type=stdout \
+  --auto-start=true
+```
+
+### Example: Local File URLs
+
+```bash
+# Using file:// URL scheme
+./driver \
+  --base-path=file:///data/bundles \
+  --measures-path=/data/measures \
+  --distributor-type=stdout \
+  --auto-start=true
 ```
 
 ### Example: Mixed Storage (GCS + Local)
 
 ```bash
 # Bundles from GCS, measures from local filesystem
-./coordinator \
+./driver \
   --base-path=gs://my-bucket/fhir-bundles \
   --measures-path=/local/path/measures \
-  --distributor-type=stdout
+  --distributor-type=stdout \
+  --auto-start=true
 ```
 
 ## Implementation Options
@@ -57,39 +74,46 @@ Use `storage.Reader` directly for maximum control:
 package main
 
 import (
+    "bufio"
     "context"
-    "github.com/dqme/job-coordinator/internal/storage"
+    "github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/storage"
+    "github.com/cvs-health-source-code/digital-qme-system/job-driver/internal/processor"
 )
 
 func processFiles(basePath string) error {
     ctx := context.Background()
     
-    // Create reader (supports local, gs://, or s3://)
-    reader, err := storage.NewReader(ctx, basePath)
+    // Create cloud storage reader (supports file://, gs://, or s3://)
+    reader, err := storage.NewCloudStorageReader(ctx, basePath)
     if err != nil {
         return err
     }
     defer reader.Close()
     
-    // List files
-    files, err := reader.List("*.ndjson")
+    // Discover NDJSON files (including .ndjson.gz)
+    files, err := processor.DiscoverFiles(basePath, nil)
     if err != nil {
         return err
     }
     
-    // Process each file
+    // Process each file with automatic gzip decompression
     for _, file := range files {
-        rc, err := reader.OpenFile(file)
+        // openFileReader handles both plain and gzipped files
+        rc, err := processor.OpenFileReader(file)
         if err != nil {
             return err
         }
         
-        // Process file contents
+        // Process file contents (supports lines up to 10MB)
         scanner := bufio.NewScanner(rc)
+        buf := make([]byte, 1024*1024) // 1MB initial buffer
+        scanner.Buffer(buf, 10*1024*1024) // 10MB max buffer
+        
         for scanner.Scan() {
             line := scanner.Text()
-            // Process line...
+            // Process FHIR bundle line...
         }
+        
         rc.Close()
     }
     
@@ -107,7 +131,7 @@ package main
 import (
     "context"
     "bufio"
-    "github.com/dqme/job-coordinator/internal/storage"
+    "github.com/dqme/job-driver/internal/storage"
 )
 
 func processFilesWithGzip(basePath string) error {
@@ -424,3 +448,4 @@ The storage package is designed to maintain backward compatibility:
 - Custom timeout settings
 - Bandwidth throttling
 - Checksum verification
+

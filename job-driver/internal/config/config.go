@@ -156,7 +156,7 @@ func LoadConfig() (*Config, error) {
 	v.BindPFlags(pflag.CommandLine)
 
 	// Bind environment variables with prefix
-	v.SetEnvPrefix("JOB_COORDINATOR")
+	v.SetEnvPrefix("JOB_DRIVER")
 	v.AutomaticEnv()
 
 	// Build config struct from viper
